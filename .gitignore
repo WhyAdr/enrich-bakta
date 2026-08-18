@@ -1,0 +1,13 @@
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Large genomic data and intermediate analysis outputs
+/C14-baktfold/
+/C14-NMZ_bakta/
+/SM-baktfold/
+/SM-NMZ_bakta/
+BK71A-restored.gbff
+*-KofamKOALA.txt
+*-result_ko-for-kegg-mapper.txt
