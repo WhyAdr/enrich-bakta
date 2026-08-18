@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 
 import pytest
@@ -91,6 +92,16 @@ def eggnog_bytes(*rows: str, version: str = "3.0.0-beta6") -> bytes:
     header = (
         "#query\tseed_ortholog\tevalue\tscore\tCOG_category\tPreferred_name"
         "\tGOs\tEC\tKEGG_ko\tCAZy\tannotation_confidence\n"
+    )
+    return (f"## emapper-{version}\n" + header + "\n".join(rows) + "\n").encode("utf-8")
+
+
+def eggnog_context_bytes(*rows: str, version: str = "3.0.0-beta6") -> bytes:
+    header = (
+        "#query\tseed_ortholog\tevalue\tscore\teggNOG_OGs\ttax_ceiling"
+        "\tfarthest_donor_lineage\tCOG_category\tPreferred_name\tGOs\tEC"
+        "\tKEGG_ko\tKEGG_Pathway\tKEGG_Module\tKEGG_Reaction\tKEGG_rclass"
+        "\tBRITE\tKEGG_TC\tCAZy\tBiGG_Reaction\tPFAMs\tannotation_confidence\n"
     )
     return (f"## emapper-{version}\n" + header + "\n".join(rows) + "\n").encode("utf-8")
 
@@ -363,6 +374,103 @@ def test_eggnog_header_driven_parser_and_merge_provenance(tmp_path: Path) -> Non
     assert gene["normalized_value"] == "name"
 
 
+def test_eggnog_pfam_og_notes_manifest_and_context_sidecar(
+    tmp_path: Path,
+) -> None:
+    base = write(tmp_path / "base.gbff", record_bytes("TEST", "T_0001"))
+    faa = write(tmp_path / "base.faa", b">T_0001\nMK\n")
+    eggnog = write(
+        tmp_path / "annotations.tsv",
+        eggnog_context_bytes(
+            "T_0001\tseed.1\t1e-20\t50\tOG1@1|S-1\tBacteria\t1;2;3"
+            "\tCOG0001\t-\t-\t-\tK00001\t00910,01100\tM00175\tR00200"
+            "\tRC00002\t00001\t1.A.1.1\t-\tACALD\tPF00005,PF00664"
+            "\thhhhhhhhhhhhh"
+        ),
+    )
+    output = tmp_path / "out.gbff"
+    manifest = tmp_path / "manifest.json"
+    context = tmp_path / "context.json"
+    stats = merge_eggnog(
+        base,
+        faa,
+        eggnog,
+        output,
+        manifest_path=manifest,
+        context_report_path=context,
+        eggnog_version="3.0.0-beta6",
+        add_comment_note=False,
+    )
+
+    text = output.read_text()
+    assert '/note="PFAM:PF00005"' in text
+    assert '/note="PFAM:PF00664"' in text
+    assert '/note="eggNOG_OG:OG1@1|S-1"' in text
+    assert stats["eggnog"]["pfam_candidates"] == 2
+    assert stats["eggnog"]["eggnog_og_candidates"] == 1
+    assert stats["eggnog"]["context_hits"] == 1
+
+    manifest_entries = json.loads(manifest.read_text())["entries"]
+    pfam_rows = [row for row in manifest_entries if row.get("field") == "PFAMs"]
+    og_rows = [row for row in manifest_entries if row.get("field") == "eggNOG_OGs"]
+    context_rows = [
+        row for row in manifest_entries if row.get("entry_type") == "eggnog_context"
+    ]
+    assert len(pfam_rows) == 2
+    assert all(row["evidence_class"] == "feature_note" for row in pfam_rows)
+    assert all(row["status"] == "emitted" for row in pfam_rows)
+    assert {row["source_token"] for row in pfam_rows} == {"PF00005", "PF00664"}
+    assert len(og_rows) == 1
+    assert og_rows[0]["normalized_value"] == "eggNOG_OG:OG1@1|S-1"
+    assert og_rows[0]["source_token"] == "OG1@1|S-1"
+    assert len(context_rows) == 9
+    pathway_row = next(row for row in context_rows if row["field"] == "KEGG_Pathway")
+    assert pathway_row["status"] == "sidecar_only"
+    assert pathway_row["normalized_values"] == ["00910", "01100"]
+
+    sidecar = json.loads(context.read_text())
+    assert sidecar["schema"] == "enrich-bakta.eggnog-context.v1"
+    assert sidecar["metadata"]["operation"] == "eggnog-merge"
+    assert sidecar["metadata"]["output_sha256"] == stats["output_sha256"]
+    entry = sidecar["entries"][0]
+    assert entry["locus_tag"] == "T_0001"
+    assert entry["context"]["KEGG_Module"]["values"] == ["M00175"]
+    assert "PFAMs" not in entry["context"]
+    assert "eggNOG_OGs" not in entry["context"]
+
+
+def test_eggnog_pfam_confidence_uses_final_annotation_position(
+    tmp_path: Path,
+) -> None:
+    base = write(tmp_path / "base.gbff", record_bytes("TEST", "T_0001"))
+    faa = write(tmp_path / "base.faa", b">T_0001\nMK\n")
+    row = (
+        "T_0001\tseed.1\t1e-20\t50\tOG1@1|S-1\tBacteria\t1;2;3"
+        "\tCOG0001\t-\t-\t-\tK00001\t00910\tM00175\t-\t-\t-\t-\t-\t-"
+        "\tPF00005\t" + "h" * 12 + "l"
+    )
+    eggnog = write(tmp_path / "annotations.tsv", eggnog_context_bytes(row))
+    output = tmp_path / "out.gbff"
+    manifest = tmp_path / "manifest.json"
+    merge_eggnog(
+        base,
+        faa,
+        eggnog,
+        output,
+        manifest_path=manifest,
+        min_confidence="high",
+        add_comment_note=False,
+    )
+
+    text = output.read_text()
+    assert '/note="PFAM:PF00005"' not in text
+    assert '/note="eggNOG_OG:OG1@1|S-1"' in text
+    entries = json.loads(manifest.read_text())["entries"]
+    pfam = next(row for row in entries if row.get("field") == "PFAMs")
+    assert pfam["status"] == "filtered_confidence"
+    assert pfam["confidence_code"] == "l"
+
+
 def test_eggnog_rejects_bad_fields_and_version() -> None:
     row = "T_0001\tseed\t1e-4\t10\tZ\t-\tGO:1\t-\t-\tGT2bad|wrong\thhhhhhhhhhhhh"
     with pytest.raises(MergeError, match="invalid GO"):
@@ -465,6 +573,7 @@ def test_unified_merge_reconciles_eggnog_and_kofam(tmp_path: Path) -> None:
     )
     output = tmp_path / "out.gbff"
     manifest = tmp_path / "manifest.json"
+    context = tmp_path / "context.json"
     enrich(
         bakta_path=base,
         output_path=output,
@@ -472,9 +581,13 @@ def test_unified_merge_reconciles_eggnog_and_kofam(tmp_path: Path) -> None:
         kofamscan_path=kofam,
         eggnog_path=eggnog,
         manifest_path=manifest,
+        context_report_path=context,
         add_comment_note=False,
     )
     assert output.read_text().count('/db_xref="KEGG:K00001"') == 1
+    assert (
+        json.loads(context.read_text())["metadata"]["operation"] == "unified-enrichment"
+    )
     entries = __import__("json").loads(manifest.read_text())["entries"]
     assert any(row.get("status") == "exact_duplicate_collapsed" for row in entries)
 

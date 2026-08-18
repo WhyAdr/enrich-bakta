@@ -118,10 +118,13 @@ run.
 | `KEGG_ko` | Comma-split; strip optional `ko:`; require `Kddddd` | Add novel `/db_xref="KEGG:Kddddd"`, deduplicating Bakta notes/xrefs and other planners |
 | `COG_category` | Accept validated `COGdddd` identifiers or category-letter metadata; never reinterpret letters as IDs | Add only novel `/note="COG:COGdddd"` |
 | `CAZy` | Split each token once at `|`; require a complete GH/GT/PL/CE/AA/CBM family identifier, including an optional subfamily suffix | Add novel `/db_xref="CAZy:FAMILY"` |
+| `PFAMs` | Comma-split; require non-empty whitespace-free tokens and preserve the source token | Add novel CDS `/note="PFAM:TOKEN"`; apply confidence index 12 |
+| `eggNOG_OGs` | Comma-split; require non-empty whitespace-free ortholog-group tokens and preserve the source token | Add novel CDS `/note="eggNOG_OG:TOKEN"`; no confidence position |
 
-Do not promote eggNOG pathways, modules, reactions, BRITE, TC, BiGG, PFAMs,
-`tax_ceiling`, or donor-lineage fields in this patch. Preserve them in parsed
-evidence/manifest rows so later extensions do not need to reinterpret the raw file.
+Do not promote eggNOG pathways, modules, reactions, BRITE, TC, BiGG,
+`tax_ceiling`, or donor-lineage fields to feature qualifiers. Preserve them in
+`eggnog_context` manifest rows and, when `--context-report` is supplied, a
+schema-versioned JSON sidecar grouped by query/CDS.
 
 ### Confidence
 
@@ -132,12 +135,22 @@ documented field order. Map confidence by field:
 - `GOs`: index 1
 - `EC`: index 2
 - `KEGG_ko`: index 3
+- `KEGG_Pathway`: index 4
+- `KEGG_Module`: index 5
+- `KEGG_Reaction`: index 6
+- `KEGG_rclass`: index 7
+- `BRITE`: index 8
+- `KEGG_TC`: index 9
 - `CAZy`: index 10
+- `BiGG_Reaction`: index 11
+- `PFAMs`: index 12
 
-`COG_category` has no confidence position and must not be assigned one. Add
-`--min-eggnog-confidence {low,medium,high}`, defaulting to `low` so the verified
-baseline above remains the default. Every candidate's raw code and
-emitted/existing/filtered/conflict status must be recorded in the manifest.
+`COG_category`, `eggNOG_OGs`, and transfer-provenance fields have no confidence
+position and must not be assigned one. Add `--min-eggnog-confidence
+{low,medium,high}`, defaulting to `low` so the verified baseline above remains
+the default. Every candidate's raw code and emitted/existing/filtered/conflict
+status must be recorded in the manifest; context-only values record
+`sidecar_only` status and their confidence status.
 
 ### Per-feature and record provenance
 
@@ -234,7 +247,8 @@ python merge_eggnog_bakta.py BAKTA.gbff BAKTA.faa \
   query.emapper.annotations OUTPUT.gbff \
   --eggnog-version 3.0.0-beta6 \
   --min-eggnog-confidence low \
-  --manifest OUTPUT.manifest.json
+  --manifest OUTPUT.manifest.json \
+  --context-report OUTPUT.context.json
 ```
 
 Planner requirements:
@@ -246,6 +260,10 @@ Planner requirements:
 - apply optional suffix cleanup only after raw evidence is captured;
 - add one seed-specific inference per CDS with at least one emitted value;
 - create one evidence record per candidate annotation, including suppression reason;
+- add PFAM and eggNOG ortholog-group notes to CDS features with one detailed
+  manifest record per normalized value;
+- write higher-order context to `enrich-bakta.eggnog-context.v1` JSON when
+  `--context-report` is supplied, with one grouped entry per query/CDS;
 - record source table/FAA hashes, parser format, version, row counts, mapping counts,
   confidence counts, and addition counts;
 - use the existing comment, qualifier, byte-splice, collision, atomic-write, and
@@ -260,6 +278,10 @@ Tests:
 - confidence thresholds and COG's no-confidence exception;
 - CAZy description stripping with anchored family validation;
 - inference uses seed ortholog, not software version;
+- PFAM confidence uses the final annotation-confidence position while OG notes
+  remain unscored;
+- higher-order context is retained in the manifest/sidecar without changing
+  the GBFF when the sidecar is omitted;
 - no-addition, CRLF, legacy-byte, path-collision, manifest, and idempotence cases;
 - reverse-splice byte identity and Biopython parsing.
 
@@ -297,7 +319,8 @@ python enrich_bakta.py --bakta BAKTA.gbff --faa BAKTA.faa \
   --baktfold BAKTFOLD.gbff \
   --kofamscan KofamKOALA.txt --kofamscan-version 1.3.0 \
   --eggnog query.emapper.annotations --eggnog-version 3.0.0-beta6 \
-  --output ENRICHED.gbff --manifest ENRICHED.manifest.json
+  --output ENRICHED.gbff --manifest ENRICHED.manifest.json \
+  --context-report ENRICHED.context.json
 ```
 
 CLI validation:
@@ -336,6 +359,7 @@ Update `README.md` with:
 - gene pairing, cleanup, and combined conflict policy;
 - xref/submission caveat;
 - evidence-level manifest fields and genomic-evidence caveat;
+- PFAM/ortholog-group notes and higher-order context sidecar;
 - unified and backward-compatible CLI examples.
 
 Run:

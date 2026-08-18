@@ -17,7 +17,7 @@ the output. Biopython also parses every input and generated GenBank file.
 | `merge_engine.py` | Shared record/feature parity, raw-byte splicing, GenBank validation, atomic output, and TSV/JSON manifest support. |
 | `graft_baktfold_additions.py` | Adds only missing Baktfold gene symbols, EC qualifiers, and exact-prefix `afdb_v6:`, `cath:`, or `pdb:` structural xrefs. |
 | `merge_kofamscan_bakta.py` | Validates Bakta FAA proteins and Kofam hit rows, then adds KO xrefs and per-hit provenance. It can merge Baktfold in the same pass. |
-| `merge_eggnog_bakta.py` | Validates eggNOG-mapper TSV (or optional XLSX) rows and exact FAA/GBFF protein identity, then adds allowlisted functional evidence. |
+| `merge_eggnog_bakta.py` | Validates eggNOG-mapper TSV (or optional XLSX) rows and exact FAA/GBFF protein identity, then adds supported annotations, PFAM/ortholog notes, and optional context reporting. |
 | `enrich_bakta.py` | Canonical one-pass multi-source CLI that reconciles Baktfold, KofamScan, and eggNOG additions before byte splicing. |
 | `restore_bakta_translations.py` | Creates a separate FAA-backed GBFF copy with `/translation` restored only for eggNOG-referenced translationless pseudogene CDSs. |
 | `normalize_baktfold.py` | Legacy Baktfold-output normalization utility; it is not used by the byte-preserving merge path. |
@@ -100,7 +100,8 @@ python merge_eggnog_bakta.py \
   BAKTA.gbff BAKTA.faa query.emapper.annotations OUTPUT.gbff \
   --eggnog-version 3.0.0-beta6 \
   --min-eggnog-confidence low \
-  --manifest OUTPUT.manifest.json
+  --manifest OUTPUT.manifest.json \
+  --context-report OUTPUT.context.json
 ```
 
 The eggNOG table must contain unique query IDs. Every query used for enrichment
@@ -111,10 +112,13 @@ rows for FAA proteins are valid; mismatched or pseudogene evidence is rejected.
 TSV input is dependency-free and retains `## emapper-VERSION` metadata. XLSX is
 optional (`openpyxl`), must contain exactly one `annotations` sheet with no
 formulas, and needs an explicit `--eggnog-version` because its header metadata is
-not retained. Supported fields are `Preferred_name`, GO, fully specified EC,
-KEGG KO, validated COG IDs, and CAZy families. Confidence thresholds are `low`
-(default), `medium`, and `high`; COG category letters are not reinterpreted as
-COG IDs and COG has no confidence position.
+not retained. Feature-level fields are `Preferred_name`, GO, fully specified EC,
+KEGG KO, validated COG IDs, CAZy families, `PFAMs`, and `eggNOG_OGs`.
+`PFAMs` values are added to CDS `/note` as `PFAM:VALUE` and use the final
+confidence position; `eggNOG_OGs` values are added as `eggNOG_OG:VALUE` and have
+no confidence position. Confidence thresholds are `low` (default), `medium`,
+and `high`; COG category letters are not reinterpreted as COG IDs and COG has no
+confidence position.
 
 Preferred names are added only to a blank, location-matched `gene`/CDS pair.
 `--clean-gene-suffix` removes one terminal `_digits` during planning but preserves
@@ -122,6 +126,12 @@ the raw value in the manifest. The manifest also retains hashes, version, row,
 score, E-value, raw/normalized values, confidence, and emission/suppression
 status. Feature provenance identifies the seed ortholog as
 `DESCRIPTION:similar to AA sequence:eggNOG:SEED_ORTHOLOG`.
+
+When `--context-report PATH` is supplied, higher-order fields such as KEGG
+pathways/modules/reactions, BRITE, transporter classification, BiGG reactions,
+taxonomic scope, and donor lineage are written to a separate deterministic JSON
+sidecar (`enrich-bakta.eggnog-context.v1`). They are also recorded as
+`sidecar_only` manifest entries, but are not promoted to feature qualifiers.
 
 ### Translationless pseudogene workflow
 
@@ -160,7 +170,8 @@ python enrich_bakta.py \
   --bakta BAKTA.gbff --faa BAKTA.faa --baktfold BAKTFOLD.gbff \
   --kofamscan KofamKOALA.txt --kofamscan-version 1.3.0 \
   --eggnog query.emapper.annotations --eggnog-version 3.0.0-beta6 \
-  --output ENRICHED.gbff --manifest ENRICHED.manifest.json
+  --output ENRICHED.gbff --manifest ENRICHED.manifest.json \
+  --context-report ENRICHED.context.json
 ```
 
 At least one evidence source is required, and FAA is mandatory with KofamScan or

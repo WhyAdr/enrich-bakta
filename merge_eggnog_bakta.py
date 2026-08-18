@@ -33,6 +33,7 @@ KO_RE = re.compile(r"K\d{5}\Z")
 COG_RE = re.compile(r"COG\d{4}\Z")
 CAZY_RE = re.compile(r"(?:GH|GT|PL|CE|AA|CBM)\d+(?:_\d+)?\Z")
 QUERY_RE = re.compile(r"\S+\Z")
+ANNOTATION_TOKEN_RE = re.compile(r"[^\s,]+\Z")
 VERSION_RE = re.compile(r"^##\s*emapper-([^\s]+)")
 CONFIDENCE_RANK = {"low": 0, "medium": 1, "high": 2}
 CONFIDENCE_CODE_RANK = {"l": 0, "m": 1, "h": 2}
@@ -41,7 +42,15 @@ CONFIDENCE_FIELD_INDEX = {
     "GOs": 1,
     "EC": 2,
     "KEGG_ko": 3,
+    "KEGG_Pathway": 4,
+    "KEGG_Module": 5,
+    "KEGG_Reaction": 6,
+    "KEGG_rclass": 7,
+    "BRITE": 8,
+    "KEGG_TC": 9,
     "CAZy": 10,
+    "BiGG_Reaction": 11,
+    "PFAMs": 12,
 }
 REQUIRED_COLUMNS = (
     "#query",
@@ -57,6 +66,31 @@ REQUIRED_COLUMNS = (
     "annotation_confidence",
 )
 COMMENT_MARKER = "##enrich-bakta:eggNOG:v1##"
+FEATURE_NOTE_FIELDS = {"PFAMs", "eggNOG_OGs"}
+CONTEXT_LIST_FIELDS = {
+    "KEGG_Pathway",
+    "KEGG_Module",
+    "KEGG_Reaction",
+    "KEGG_rclass",
+    "BRITE",
+    "KEGG_TC",
+    "BiGG_Reaction",
+}
+HIGHER_ORDER_FIELDS = (
+    "Description",
+    "KEGG_Pathway",
+    "KEGG_Module",
+    "KEGG_Reaction",
+    "KEGG_rclass",
+    "BRITE",
+    "KEGG_TC",
+    "BiGG_Reaction",
+    "tax_ceiling",
+    "max_annot_lvl",
+    "farthest_donor_taxid",
+    "farthest_donor_lineage",
+)
+MISSING_ANNOTATION_VALUES = {"", "-", "NA"}
 
 
 @dataclass(frozen=True)
@@ -72,6 +106,8 @@ class EggnogHit:
     ec: tuple[str, ...]
     kegg_ko: tuple[str, ...]
     cazy: tuple[str, ...]
+    pfams: tuple[str, ...]
+    eggnog_ogs: tuple[str, ...]
     confidence: str
     raw_fields: tuple[tuple[str, str], ...]
 
@@ -105,7 +141,7 @@ def _tokens(
     pattern: re.Pattern[str],
     prefix: str = "",
 ) -> tuple[str, ...]:
-    if value in {"", "-"}:
+    if value.strip() in MISSING_ANNOTATION_VALUES:
         return ()
     result: list[str] = []
     for raw in value.split(","):
@@ -120,7 +156,7 @@ def _tokens(
 
 
 def _parse_cazy(value: str, row_number: int) -> tuple[str, ...]:
-    if value in {"", "-"}:
+    if value.strip() in MISSING_ANNOTATION_VALUES:
         return ()
     result: list[str] = []
     for raw in value.split(","):
@@ -188,6 +224,18 @@ def _build_hit(values: dict[str, str], row_number: int) -> EggnogHit:
             prefix="ko:",
         ),
         cazy=_parse_cazy(values["CAZy"].strip(), row_number),
+        pfams=_tokens(
+            values.get("PFAMs", "").strip(),
+            field="PFAMs",
+            row_number=row_number,
+            pattern=ANNOTATION_TOKEN_RE,
+        ),
+        eggnog_ogs=_tokens(
+            values.get("eggNOG_OGs", "").strip(),
+            field="eggNOG_OGs",
+            row_number=row_number,
+            pattern=ANNOTATION_TOKEN_RE,
+        ),
         confidence=confidence,
         raw_fields=tuple(values.items()),
     )
@@ -355,6 +403,100 @@ def _confidence_passes(hit: EggnogHit, field: str, minimum: str) -> bool:
     )
 
 
+def _context_values(field: str, raw: str) -> tuple[str, ...]:
+    value = raw.strip()
+    if value in MISSING_ANNOTATION_VALUES:
+        return ()
+    if field not in CONTEXT_LIST_FIELDS:
+        return (value,)
+    return tuple(
+        token.strip()
+        for token in value.split(",")
+        if token.strip() not in MISSING_ANNOTATION_VALUES
+    )
+
+
+def _confidence_status(hit: EggnogHit, field: str, minimum: str) -> str:
+    index = CONFIDENCE_FIELD_INDEX.get(field)
+    if index is None:
+        return "not_scored"
+    return (
+        "passes"
+        if _confidence_passes(hit, field, minimum)
+        else "below_requested_threshold"
+    )
+
+
+def _collect_context(
+    cds: dict[str, RawFeature],
+    table: EggnogTable,
+    *,
+    min_confidence: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+    report_entries: list[dict[str, Any]] = []
+    manifest_rows: list[dict[str, Any]] = []
+    context_value_count = 0
+    for hit in table.hits:
+        feature = cds[hit.query_id]
+        context: dict[str, dict[str, Any]] = {}
+        for field in HIGHER_ORDER_FIELDS:
+            raw = hit.raw(field)
+            values = _context_values(field, raw)
+            if not values:
+                continue
+            confidence_index = CONFIDENCE_FIELD_INDEX.get(field)
+            confidence_code = (
+                "" if confidence_index is None else hit.confidence[confidence_index]
+            )
+            confidence_status = _confidence_status(hit, field, min_confidence)
+            context[field] = {
+                "raw": raw,
+                "values": list(values),
+                "confidence_code": confidence_code,
+                "confidence_status": confidence_status,
+            }
+            context_value_count += len(values)
+            manifest_rows.append(
+                {
+                    "entry_type": "eggnog_context",
+                    "evidence_class": "higher_order_context",
+                    "row_number": hit.row_number,
+                    "query_id": hit.query_id,
+                    "record": feature.record_id,
+                    "feature_type": feature.feature_type,
+                    "locus_tag": feature.locus_tag or "",
+                    "field": field,
+                    "raw_value": raw,
+                    "normalized_value": ", ".join(values),
+                    "normalized_values": list(values),
+                    "confidence_code": confidence_code,
+                    "confidence_status": confidence_status,
+                    "status": "sidecar_only",
+                    "emitted_qualifiers": "",
+                    "seed_ortholog": hit.seed_ortholog,
+                    "e_value": hit.evalue,
+                    "score": hit.score,
+                    "raw_fields": dict(hit.raw_fields),
+                }
+            )
+        if context:
+            report_entries.append(
+                {
+                    "entry_type": "eggnog_context",
+                    "row_number": hit.row_number,
+                    "query_id": hit.query_id,
+                    "record": feature.record_id,
+                    "feature_type": feature.feature_type,
+                    "locus_tag": feature.locus_tag or "",
+                    "seed_ortholog": hit.seed_ortholog,
+                    "e_value": hit.evalue,
+                    "score": hit.score,
+                    "context": context,
+                }
+            )
+    return report_entries, manifest_rows, context_value_count
+
+
 def plan_eggnog_additions(
     base: RawDocument,
     proteins: dict[str, str],
@@ -423,6 +565,14 @@ def plan_eggnog_additions(
             ("CAZy", "db_xref", f"CAZy:{value}", CONFIDENCE_FIELD_INDEX["CAZy"])
             for value in hit.cazy
         )
+        candidates.extend(
+            ("PFAMs", "note", f"PFAM:{value}", CONFIDENCE_FIELD_INDEX["PFAMs"])
+            for value in hit.pfams
+        )
+        candidates.extend(
+            ("eggNOG_OGs", "note", f"eggNOG_OG:{value}", None)
+            for value in hit.eggnog_ogs
+        )
         for field, qualifier, value, confidence_index in candidates:
             stats["candidate_values"] += 1
             status = "existing"
@@ -483,6 +633,11 @@ def plan_eggnog_additions(
             evidence.append(
                 {
                     "entry_type": "eggnog_candidate",
+                    "evidence_class": (
+                        "feature_note"
+                        if field in FEATURE_NOTE_FIELDS
+                        else "direct_annotation"
+                    ),
                     "row_number": hit.row_number,
                     "query_id": hit.query_id,
                     "record": feature.record_id,
@@ -490,6 +645,13 @@ def plan_eggnog_additions(
                     "locus_tag": feature.locus_tag or "",
                     "field": field,
                     "raw_value": raw_value,
+                    "source_token": (
+                        value.removeprefix("PFAM:")
+                        if field == "PFAMs"
+                        else value.removeprefix("eggNOG_OG:")
+                        if field == "eggNOG_OGs"
+                        else value
+                    ),
                     "normalized_value": value,
                     "confidence_code": ""
                     if confidence_index is None
@@ -520,6 +682,10 @@ def plan_eggnog_additions(
                 order += 1
                 values.add(inference)
 
+    context_entries, context_rows, context_value_count = _collect_context(
+        cds, table, min_confidence=min_confidence
+    )
+    evidence.extend(context_rows)
     eggnog_hash = sha256_bytes(eggnog_data)
     faa_hash = sha256_bytes(faa_data)
     if add_comment_note:
@@ -547,7 +713,33 @@ def plan_eggnog_additions(
             "eggnog_sha256": eggnog_hash,
             "faa_sha256": faa_hash,
             "hit_cds": len(emitted_by_query),
+            "pfam_candidates": sum(len(hit.pfams) for hit in table.hits),
+            "eggnog_og_candidates": sum(len(hit.eggnog_ogs) for hit in table.hits),
+            "context_hits": len(context_entries),
+            "context_manifest_rows": len(context_rows),
+            "context_values": context_value_count,
             "planned_insertions": len(insertions),
+            "_context_report": {
+                "schema": "enrich-bakta.eggnog-context.v1",
+                "metadata": {
+                    "operation": "eggnog-context-report",
+                    "eggnog_version": table.version or "",
+                    "eggnog_sha256": eggnog_hash,
+                    "faa_sha256": faa_hash,
+                    "min_eggnog_confidence": min_confidence,
+                    "format": table.format,
+                    "columns": list(table.columns),
+                    "rows": len(table.hits),
+                    "context_hits": len(context_entries),
+                    "context_values": context_value_count,
+                    "fields": list(HIGHER_ORDER_FIELDS),
+                    "note": (
+                        "Higher-order eggNOG context is reported separately from "
+                        "feature-level qualifiers."
+                    ),
+                },
+                "entries": context_entries,
+            },
         }
     )
     return insertions, evidence, stats
@@ -566,6 +758,7 @@ def merge(
     add_comment_note: bool = True,
     add_feature_provenance: bool = True,
     merge_timestamp: str | None = None,
+    context_report_path: Path | None = None,
 ) -> dict[str, Any]:
     base_data, faa_data, eggnog_data = (
         bakta_path.read_bytes(),
@@ -587,6 +780,8 @@ def merge(
         add_feature_provenance=add_feature_provenance,
         merge_timestamp=merge_timestamp,
     )
+    context_report = stats.pop("_context_report")
+    context_report["metadata"]["operation"] = "eggnog-merge"
     final = finalize_merge(
         base_path=bakta_path,
         output_path=output_path,
@@ -594,6 +789,8 @@ def merge(
         insertions=insertions,
         manifest_path=manifest_path,
         evidence_rows=evidence,
+        sidecar_path=context_report_path,
+        sidecar_payload=context_report if context_report_path else None,
         metadata={
             "operation": "eggnog-merge",
             "eggnog_sha256": stats["eggnog_sha256"],
@@ -623,6 +820,11 @@ def main() -> int:
     parser.add_argument("--no-comment-note", action="store_true")
     parser.add_argument("--no-feature-provenance", action="store_true")
     parser.add_argument("--merge-timestamp")
+    parser.add_argument(
+        "--context-report",
+        type=Path,
+        help="write higher-order eggNOG context as a deterministic JSON sidecar",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     for label, path in (
@@ -645,6 +847,7 @@ def main() -> int:
             add_comment_note=not args.no_comment_note,
             add_feature_provenance=not args.no_feature_provenance,
             merge_timestamp=args.merge_timestamp,
+            context_report_path=args.context_report,
         )
     except MergeError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

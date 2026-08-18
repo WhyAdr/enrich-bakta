@@ -902,6 +902,16 @@ def write_manifest(
     atomic_write(path, ("\n".join(output) + "\n").encode("utf-8"))
 
 
+def write_json_sidecar(path: Path, payload: dict[str, Any]) -> None:
+    data = (
+        json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False).encode(
+            "utf-8"
+        )
+        + b"\n"
+    )
+    atomic_write(path, data)
+
+
 def finalize_merge(
     *,
     base_path: Path,
@@ -912,14 +922,25 @@ def finalize_merge(
     metadata: dict[str, Any],
     evidence_rows: list[dict[str, Any]] | None = None,
     extra_allowed_qualifiers: Iterable[str] = (),
+    sidecar_path: Path | None = None,
+    sidecar_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     inputs = [base_path, *other_inputs]
     if paths_collide(output_path, inputs):
         raise MergeError("output path must differ from every input path")
     if manifest_path is not None and paths_collide(
-        manifest_path, [*inputs, output_path]
+        manifest_path, [*inputs, output_path, *([sidecar_path] if sidecar_path else [])]
     ):
-        raise MergeError("manifest path must differ from inputs and output")
+        raise MergeError("manifest path must differ from inputs, output, and sidecar")
+    if sidecar_path is None and sidecar_payload is not None:
+        raise MergeError("sidecar payload requires a sidecar path")
+    if sidecar_path is not None and sidecar_payload is None:
+        raise MergeError("sidecar path requires a sidecar payload")
+    if sidecar_path is not None and paths_collide(
+        sidecar_path,
+        [*inputs, output_path, *([manifest_path] if manifest_path else [])],
+    ):
+        raise MergeError("sidecar path must differ from inputs, output, and manifest")
     base_data = base_path.read_bytes()
     merged, applied = apply_insertions(
         base_data, insertions, extra_allowed_qualifiers=extra_allowed_qualifiers
@@ -933,16 +954,30 @@ def finalize_merge(
         "insertions": len(applied),
         "records": len(parsed_output.records),
     }
+    if sidecar_payload is not None:
+        sidecar_metadata = sidecar_payload.get("metadata")
+        if isinstance(sidecar_metadata, dict):
+            sidecar_metadata.update(
+                {
+                    "base_sha256": metadata["base_sha256"],
+                    "output_sha256": metadata["output_sha256"],
+                    "insertions": metadata["insertions"],
+                    "records": metadata["records"],
+                }
+            )
     atomic_write(output_path, merged)
     if manifest_path is not None:
         rows = insertion_rows(applied)
         if evidence_rows is not None:
             rows = [*evidence_rows, *rows]
         write_manifest(manifest_path, metadata, rows)
+    if sidecar_path is not None and sidecar_payload is not None:
+        write_json_sidecar(sidecar_path, sidecar_payload)
     return {
         "output_sha256": metadata["output_sha256"],
         "base_sha256": metadata["base_sha256"],
         "insertions": len(applied),
         "self_check": True,
         "manifest": str(manifest_path) if manifest_path else None,
+        "sidecar": str(sidecar_path) if sidecar_path else None,
     }

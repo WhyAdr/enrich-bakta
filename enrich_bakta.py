@@ -38,6 +38,7 @@ def enrich(
     add_comment_note: bool = True,
     add_feature_provenance: bool = True,
     merge_timestamp: str | None = None,
+    context_report_path: Path | None = None,
 ) -> dict[str, Any]:
     if not any((baktfold_path, kofamscan_path, eggnog_path)):
         raise MergeError("at least one evidence source is required")
@@ -47,6 +48,8 @@ def enrich(
         raise MergeError("--kofamscan-version requires --kofamscan")
     if eggnog_version and eggnog_path is None:
         raise MergeError("--eggnog-version requires --eggnog")
+    if context_report_path is not None and eggnog_path is None:
+        raise MergeError("--context-report requires --eggnog")
     base_data = bakta_path.read_bytes()
     validate_genbank_semantics(base_data, "Bakta input")
     base = parse_genbank_bytes(base_data, "Bakta input")
@@ -113,6 +116,8 @@ def enrich(
             merge_timestamp=merge_timestamp,
             starting_order=2_000_000,
         )
+        context_report = stats.pop("_context_report")
+        context_report["metadata"]["operation"] = "unified-enrichment"
         insertions.extend(planned)
         evidence_rows.extend(rows)
         metadata.update(
@@ -136,6 +141,8 @@ def enrich(
         manifest_path=manifest_path,
         evidence_rows=evidence_rows,
         metadata=metadata,
+        sidecar_path=context_report_path,
+        sidecar_payload=context_report if context_report_path else None,
     )
 
 
@@ -163,6 +170,11 @@ def main() -> int:
     parser.add_argument("--no-comment-note", action="store_true")
     parser.add_argument("--no-feature-provenance", action="store_true")
     parser.add_argument("--merge-timestamp")
+    parser.add_argument(
+        "--context-report",
+        type=Path,
+        help="write higher-order eggNOG context as a deterministic JSON sidecar",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     for label, path in (
@@ -190,6 +202,7 @@ def main() -> int:
             add_comment_note=not args.no_comment_note,
             add_feature_provenance=not args.no_feature_provenance,
             merge_timestamp=args.merge_timestamp,
+            context_report_path=args.context_report,
         )
     except MergeError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
