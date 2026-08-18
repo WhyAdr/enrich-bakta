@@ -6,16 +6,21 @@ from pathlib import Path
 import pytest
 from Bio import SeqIO
 
+from enrich_bakta import enrich
 from graft_baktfold_additions import graft
+from merge_eggnog_bakta import merge as merge_eggnog
+from merge_eggnog_bakta import parse_eggnog_path, parse_eggnog_tsv
 from merge_engine import (
     Insertion,
     MergeError,
     apply_insertions,
     format_qualifier,
     parse_genbank_bytes,
+    reconcile_insertions,
     strict_parity_check,
 )
 from merge_kofamscan_bakta import merge, parse_kofam_table
+from restore_bakta_translations import restore
 
 
 def record_bytes(
@@ -80,6 +85,14 @@ def kofam_bytes(*rows: str) -> bytes:
         "#-------------------- ------ ------- ------ --------- ---------------------\n"
     )
     return (header + "\n".join(rows) + "\n").encode("ascii")
+
+
+def eggnog_bytes(*rows: str, version: str = "3.0.0-beta6") -> bytes:
+    header = (
+        "#query\tseed_ortholog\tevalue\tscore\tCOG_category\tPreferred_name"
+        "\tGOs\tEC\tKEGG_ko\tCAZy\tannotation_confidence\n"
+    )
+    return (f"## emapper-{version}\n" + header + "\n".join(rows) + "\n").encode("utf-8")
 
 
 def test_baktfold_exact_prefixes_blank_gene_and_separate_provenance(
@@ -307,3 +320,179 @@ def test_quoted_formatter_wraps_and_biopython_parses() -> None:
     data = record_bytes("TEST", "T_0001").replace(b"ORIGIN\n", rendered + b"ORIGIN\n")
     records = list(SeqIO.parse(io.StringIO(data.decode()), "genbank"))
     assert len(records) == 1
+
+
+def test_eggnog_header_driven_parser_and_merge_provenance(tmp_path: Path) -> None:
+    base = write(tmp_path / "base.gbff", record_bytes("TEST", "T_0001"))
+    faa = write(tmp_path / "base.faa", b">T_0001\nMK\n")
+    eggnog = write(
+        tmp_path / "annotations.tsv",
+        eggnog_bytes(
+            "T_0001\tseed.1\t1e-20\t50\tCOG0001\tname_12\tGO:0000001"
+            "\tEC:1.2.3.4\tko:K00001\tGT2|Glycosyltransferase Family 2.\thhhhhhhhhhhhh"
+        ),
+    )
+    output = tmp_path / "out.gbff"
+    manifest = tmp_path / "manifest.json"
+    stats = merge_eggnog(
+        base,
+        faa,
+        eggnog,
+        output,
+        manifest_path=manifest,
+        eggnog_version="3.0.0-beta6",
+        clean_gene_suffix=True,
+        add_comment_note=False,
+    )
+    text = output.read_text()
+    assert stats["eggnog"]["emitted_values"] == 7  # paired gene plus five CDS values
+    assert text.count('/gene="name"') == 2
+    assert '/db_xref="GO:0000001"' in text
+    assert '/EC_number="1.2.3.4"' in text
+    assert '/db_xref="KEGG:K00001"' in text
+    assert '/note="COG:COG0001"' in text
+    assert '/db_xref="CAZy:GT2"' in text
+    parsed = list(SeqIO.parse(io.StringIO(text), "genbank"))
+    cds = next(feature for feature in parsed[0].features if feature.type == "CDS")
+    assert cds.qualifiers["inference"] == [
+        "DESCRIPTION:similar to AA sequence:eggNOG:seed.1"
+    ]
+    entries = __import__("json").loads(manifest.read_text())["entries"]
+    gene = next(row for row in entries if row.get("field") == "Preferred_name")
+    assert gene["raw_value"] == "name_12"
+    assert gene["normalized_value"] == "name"
+
+
+def test_eggnog_rejects_bad_fields_and_version() -> None:
+    row = "T_0001\tseed\t1e-4\t10\tZ\t-\tGO:1\t-\t-\tGT2bad|wrong\thhhhhhhhhhhhh"
+    with pytest.raises(MergeError, match="invalid GO"):
+        parse_eggnog_tsv(eggnog_bytes(row))
+    valid = "T_0001\tseed\t1e-4\t10\tZ\t-\t-\t-\t-\t-\thhhhhhhhhhhhh"
+    with pytest.raises(MergeError, match="version mismatch"):
+        parse_eggnog_tsv(eggnog_bytes(valid), expected_version="4")
+
+
+def test_eggnog_xlsx_requires_explicit_version_before_optional_import(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(MergeError, match="--eggnog-version is required"):
+        parse_eggnog_path(tmp_path / "annotations.xlsx")
+
+
+def test_eggnog_confidence_and_existing_values_are_not_reinserted(
+    tmp_path: Path,
+) -> None:
+    base = write(
+        tmp_path / "base.gbff",
+        record_bytes("TEST", "T_0001", db_xrefs=("GO:0000001", "KEGG:K00001")),
+    )
+    faa = write(tmp_path / "base.faa", b">T_0001\nMK\n")
+    eggnog = write(
+        tmp_path / "annotations.tsv",
+        eggnog_bytes(
+            "T_0001\tseed\t1e-4\t10\tCOG0001\t-\tGO:0000001\t1.2.3.4"
+            "\tK00001\t-\thhlhhhhhhhhhh"
+        ),
+    )
+    output = tmp_path / "out.gbff"
+    stats = merge_eggnog(
+        base,
+        faa,
+        eggnog,
+        output,
+        min_confidence="high",
+        add_comment_note=False,
+    )
+    text = output.read_text()
+    assert text.count('/db_xref="GO:0000001"') == 1
+    assert text.count('/db_xref="KEGG:K00001"') == 1
+    assert "/EC_number" not in text
+    assert '/note="COG:COG0001"' in text  # COG deliberately has no confidence code
+    assert stats["eggnog"]["confidence_filtered"] == 1
+
+
+def test_reconciliation_collapses_duplicates_and_handles_gene_conflicts() -> None:
+    shared = Insertion(
+        10,
+        b"",
+        "TEST",
+        "CDS",
+        "T_0001",
+        "db_xref",
+        "KEGG:K00001",
+        "KofamScan",
+        "K00001",
+        1,
+    )
+    duplicate = Insertion(
+        10,
+        b"",
+        "TEST",
+        "CDS",
+        "T_0001",
+        "db_xref",
+        "KEGG:K00001",
+        "eggNOG",
+        "K00001",
+        2,
+    )
+    baktfold_gene = Insertion(
+        10, b"", "TEST", "CDS", "T_0001", "gene", "bakt", "Baktfold", "bakt", 3
+    )
+    eggnog_gene = Insertion(
+        10, b"", "TEST", "CDS", "T_0001", "gene", "egg", "eggNOG", "egg", 4
+    )
+    reconciled, rows, stats = reconcile_insertions(
+        [shared, duplicate, baktfold_gene, eggnog_gene]
+    )
+    assert len(reconciled) == 1
+    assert reconciled[0].qualifier == "db_xref"
+    assert stats["gene_conflicts"] == 1
+    assert any(row["status"] == "exact_duplicate_collapsed" for row in rows)
+    preferred, _, _ = reconcile_insertions(
+        [baktfold_gene, eggnog_gene], gene_conflict_policy="prefer-eggnog"
+    )
+    assert [item.value for item in preferred] == ["egg"]
+
+
+def test_unified_merge_reconciles_eggnog_and_kofam(tmp_path: Path) -> None:
+    base = write(tmp_path / "base.gbff", record_bytes("TEST", "T_0001"))
+    faa = write(tmp_path / "base.faa", b">T_0001\nMK\n")
+    kofam = write(tmp_path / "kofam.txt", kofam_bytes("* T_0001 K00001 1 2 3e-4 alpha"))
+    eggnog = write(
+        tmp_path / "annotations.tsv",
+        eggnog_bytes("T_0001\tseed\t1e-4\t10\t-\t-\t-\t-\tK00001\t-\thhhhhhhhhhhhh"),
+    )
+    output = tmp_path / "out.gbff"
+    manifest = tmp_path / "manifest.json"
+    enrich(
+        bakta_path=base,
+        output_path=output,
+        faa_path=faa,
+        kofamscan_path=kofam,
+        eggnog_path=eggnog,
+        manifest_path=manifest,
+        add_comment_note=False,
+    )
+    assert output.read_text().count('/db_xref="KEGG:K00001"') == 1
+    entries = __import__("json").loads(manifest.read_text())["entries"]
+    assert any(row.get("status") == "exact_duplicate_collapsed" for row in entries)
+
+
+def test_translation_restoration_is_limited_to_eggnog_pseudogenes(
+    tmp_path: Path,
+) -> None:
+    base_data = record_bytes("TEST", "T_0001").replace(
+        b'                     /translation="MK"\n',
+        b'                     /pseudogene="unitary"\n',
+    )
+    base = write(tmp_path / "base.gbff", base_data)
+    faa = write(tmp_path / "base.faa", b">T_0001\nMK\n")
+    eggnog = write(
+        tmp_path / "annotations.tsv",
+        eggnog_bytes("T_0001\tseed\t1e-4\t10\t-\t-\t-\t-\t-\t-\thhhhhhhhhhhhh"),
+    )
+    output = tmp_path / "restored.gbff"
+    stats = restore(base, faa, eggnog, output, eggnog_version="3.0.0-beta6")
+    assert stats["restored_translation_count"] == 1
+    assert output.read_bytes().count(b'/translation="MK"') == 1

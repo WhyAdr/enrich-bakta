@@ -1,7 +1,7 @@
 # enrich-bakta
 
-`enrich-bakta` adds annotation-supported evidence from Baktfold and
-KofamScan/KOALA to Bakta GenBank files without reconstructing or normalizing
+`enrich-bakta` adds annotation-supported evidence from Baktfold,
+KofamScan/KOALA, and eggNOG-mapper to Bakta GenBank files without reconstructing or normalizing
 the Bakta source.
 
 The original Bakta `.gbff` is always authoritative. The merge engine computes
@@ -17,6 +17,9 @@ the output. Biopython also parses every input and generated GenBank file.
 | `merge_engine.py` | Shared record/feature parity, raw-byte splicing, GenBank validation, atomic output, and TSV/JSON manifest support. |
 | `graft_baktfold_additions.py` | Adds only missing Baktfold gene symbols, EC qualifiers, and exact-prefix `afdb_v6:`, `cath:`, or `pdb:` structural xrefs. |
 | `merge_kofamscan_bakta.py` | Validates Bakta FAA proteins and Kofam hit rows, then adds KO xrefs and per-hit provenance. It can merge Baktfold in the same pass. |
+| `merge_eggnog_bakta.py` | Validates eggNOG-mapper TSV (or optional XLSX) rows and exact FAA/GBFF protein identity, then adds allowlisted functional evidence. |
+| `enrich_bakta.py` | Canonical one-pass multi-source CLI that reconciles Baktfold, KofamScan, and eggNOG additions before byte splicing. |
+| `restore_bakta_translations.py` | Creates a separate FAA-backed GBFF copy with `/translation` restored only for eggNOG-referenced translationless pseudogene CDSs. |
 | `normalize_baktfold.py` | Legacy Baktfold-output normalization utility; it is not used by the byte-preserving merge path. |
 | `tests/` | Synthetic parity, preservation, qualifier, KO, failure, CRLF, and idempotence tests. |
 
@@ -90,12 +93,95 @@ These annotations describe genomic evidence. A KO assignment, EC label, or
 structural hit does not demonstrate expression, enzyme activity, pathway
 completeness, or phenotype.
 
+## eggNOG-mapper merge
+
+```bash
+python merge_eggnog_bakta.py \
+  BAKTA.gbff BAKTA.faa query.emapper.annotations OUTPUT.gbff \
+  --eggnog-version 3.0.0-beta6 \
+  --min-eggnog-confidence low \
+  --manifest OUTPUT.manifest.json
+```
+
+The eggNOG table must contain unique query IDs. Every query used for enrichment
+must occur once in the supplied FAA and as one Bakta CDS `locus_tag`, with its
+normalized FAA sequence exactly matching the CDS `/translation`. Missing eggNOG
+rows for FAA proteins are valid; mismatched or pseudogene evidence is rejected.
+
+TSV input is dependency-free and retains `## emapper-VERSION` metadata. XLSX is
+optional (`openpyxl`), must contain exactly one `annotations` sheet with no
+formulas, and needs an explicit `--eggnog-version` because its header metadata is
+not retained. Supported fields are `Preferred_name`, GO, fully specified EC,
+KEGG KO, validated COG IDs, and CAZy families. Confidence thresholds are `low`
+(default), `medium`, and `high`; COG category letters are not reinterpreted as
+COG IDs and COG has no confidence position.
+
+Preferred names are added only to a blank, location-matched `gene`/CDS pair.
+`--clean-gene-suffix` removes one terminal `_digits` during planning but preserves
+the raw value in the manifest. The manifest also retains hashes, version, row,
+score, E-value, raw/normalized values, confidence, and emission/suppression
+status. Feature provenance identifies the seed ortholog as
+`DESCRIPTION:similar to AA sequence:eggNOG:SEED_ORTHOLOG`.
+
+### Translationless pseudogene workflow
+
+Some Bakta FAA files can retain a protein for a pseudogene CDS whose GBFF feature
+has no `/translation`. The eggNOG table identifies those queries but does not
+contain their amino-acid sequences. When that policy is desired, first use the
+matched Bakta FAA to create a separate restored GBFF copy:
+
+```bash
+# Validate the exact restoration plan; this writes nothing.
+python restore_bakta_translations.py \
+  BAKTA.gbff BAKTA.faa query.emapper.annotations RESTORED.gbff \
+  --eggnog-version 3.0.0-beta6 --dry-run
+
+# Write the restored copy and its manifest, leaving BAKTA.gbff unchanged.
+python restore_bakta_translations.py \
+  BAKTA.gbff BAKTA.faa query.emapper.annotations RESTORED.gbff \
+  --eggnog-version 3.0.0-beta6 --manifest RESTORED.manifest.json
+
+python merge_eggnog_bakta.py \
+  RESTORED.gbff BAKTA.faa query.emapper.annotations ENRICHED.gbff \
+  --eggnog-version 3.0.0-beta6 --manifest ENRICHED.manifest.json
+```
+
+The restoration script refuses any query absent from the FAA or GBFF, any
+translationless CDS not marked `/pseudogene`, and any feature that already has a
+translation. It inserts only the matched FAA sequence and records the locus and
+protein hash in the restoration manifest. This is an explicit annotation-repair
+policy: retain both the original and restored GBFFs, and do not describe the
+restored sequence as newly demonstrated biology.
+
+## Unified multi-source enrichment
+
+```bash
+python enrich_bakta.py \
+  --bakta BAKTA.gbff --faa BAKTA.faa --baktfold BAKTFOLD.gbff \
+  --kofamscan KofamKOALA.txt --kofamscan-version 1.3.0 \
+  --eggnog query.emapper.annotations --eggnog-version 3.0.0-beta6 \
+  --output ENRICHED.gbff --manifest ENRICHED.manifest.json
+```
+
+At least one evidence source is required, and FAA is mandatory with KofamScan or
+eggNOG. Exact qualifier/value overlaps are emitted once with source support in
+the reconciliation manifest. Different EC/KO values coexist. Different
+Baktfold/eggNOG gene symbols at a blank locus are skipped by default; select
+`--gene-conflict-policy prefer-eggnog` or `prefer-baktfold` to choose explicitly.
+The original single-source commands remain available.
+
+These xrefs follow the project's enrichment convention. Formal submission needs
+the current [INSDC db_xref controlled vocabulary](https://www.insdc.org/submitting-standards/dbxref-qualifier-vocabulary/);
+Biopython parsing is not an INSDC submission-validator result. eggNOG evidence is
+genomic annotation only, not proof of expression, activity, pathway completeness,
+or phenotype.
+
 ## Validation
 
 ```bash
 python -m pytest -q
 ruff check merge_engine.py graft_baktfold_additions.py \
-  merge_kofamscan_bakta.py tests
+  merge_kofamscan_bakta.py merge_eggnog_bakta.py enrich_bakta.py tests
 ruff format --check merge_engine.py graft_baktfold_additions.py \
-  merge_kofamscan_bakta.py tests
+  merge_kofamscan_bakta.py merge_eggnog_bakta.py enrich_bakta.py tests
 ```

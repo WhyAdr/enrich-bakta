@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import io
 import json
 import re
 import sys
@@ -12,8 +11,6 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
-
-from Bio import SeqIO
 
 from graft_baktfold_additions import plan_baktfold_additions
 from merge_engine import (
@@ -23,11 +20,14 @@ from merge_engine import (
     RawFeature,
     comment_insertion,
     finalize_merge,
-    normalize_protein,
+    parse_faa,
     parse_genbank_bytes,
     qualifier_insertion,
     sha256_bytes,
     validate_genbank_semantics,
+)
+from merge_engine import (
+    validate_faa_gbff as _validate_faa_gbff,
 )
 
 KO_RE = re.compile(r"K\d{5}\Z")
@@ -119,95 +119,12 @@ def parse_kofam_table(data: bytes) -> list[KofamHit]:
     return hits
 
 
-def parse_faa(data: bytes) -> dict[str, str]:
-    try:
-        text = data.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise MergeError(f"FAA is not UTF-8 at byte {exc.start}") from exc
-    proteins: dict[str, str] = {}
-    try:
-        for record in SeqIO.parse(io.StringIO(text), "fasta"):
-            if record.id in proteins:
-                raise MergeError(f"FAA contains duplicate record ID {record.id!r}")
-            sequence = normalize_protein(str(record.seq))
-            if not sequence:
-                raise MergeError(
-                    f"FAA record {record.id!r} has an empty protein sequence"
-                )
-            proteins[record.id] = sequence
-    except MergeError:
-        raise
-    except Exception as exc:
-        raise MergeError(f"FAA parsing failed: {exc}") from exc
-    if not proteins:
-        raise MergeError("FAA contains no protein records")
-    return proteins
-
-
-def _cds_by_locus(base: RawDocument) -> dict[str, RawFeature]:
-    result: dict[str, RawFeature] = {}
-    for feature in base.features:
-        if feature.feature_type != "CDS" or not feature.locus_tag:
-            continue
-        if feature.locus_tag in result:
-            other = result[feature.locus_tag]
-            raise MergeError(
-                f"GBFF duplicate CDS locus_tag {feature.locus_tag!r} in "
-                f"{other.record_id!r} and {feature.record_id!r}"
-            )
-        result[feature.locus_tag] = feature
-    return result
-
-
 def validate_faa_gbff(
     base: RawDocument, proteins: dict[str, str], hits: list[KofamHit]
 ) -> tuple[dict[str, RawFeature], dict[str, Any]]:
-    cds = _cds_by_locus(base)
-    hit_ids = {hit.query_id for hit in hits}
-    missing_faa = sorted(hit_ids - proteins.keys())
-    missing_gbff = sorted(hit_ids - cds.keys())
-    if missing_faa or missing_gbff:
-        raise MergeError(
-            "Kofam query IDs do not map exactly: "
-            + json.dumps(
-                {
-                    "missing_from_faa": missing_faa[:25],
-                    "missing_from_gbff": missing_gbff[:25],
-                },
-                indent=2,
-            )
-        )
-
-    mismatches: list[str] = []
-    missing_translations: list[str] = []
-    # FAA files may contain translated pseudogene candidates that Bakta omits
-    # from /translation. They are harmless when KofamScan did not call them;
-    # every actual hit must still match the GBFF translation exactly.
-    for query_id in sorted(hit_ids):
-        faa_sequence = proteins[query_id]
-        translations = cds[query_id].values("translation")
-        if len(translations) != 1 or not normalize_protein(translations[0]):
-            missing_translations.append(query_id)
-            continue
-        if normalize_protein(translations[0]) != faa_sequence:
-            mismatches.append(query_id)
-    if missing_translations or mismatches:
-        raise MergeError(
-            "FAA/GBFF protein validation failed: "
-            + json.dumps(
-                {
-                    "missing_or_ambiguous_translation": missing_translations[:25],
-                    "sequence_mismatches": mismatches[:25],
-                },
-                indent=2,
-            )
-        )
-    return cds, {
-        "faa_records": len(proteins),
-        "faa_gbff_sequence_matches": len(hit_ids),
-        "missing_faa_query_ids": 0,
-        "missing_gbff_query_ids": 0,
-    }
+    return _validate_faa_gbff(
+        base, proteins, (hit.query_id for hit in hits), source_name="Kofam"
+    )
 
 
 def _existing_kos(feature: RawFeature) -> set[str]:

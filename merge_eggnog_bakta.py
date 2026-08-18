@@ -1,0 +1,663 @@
+#!/usr/bin/env python3
+"""Add validated eggNOG-mapper evidence to pristine Bakta GenBank bytes."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+from typing import Any
+
+from merge_engine import (
+    Insertion,
+    MergeError,
+    RawDocument,
+    RawFeature,
+    comment_insertion,
+    finalize_merge,
+    parse_faa,
+    parse_genbank_bytes,
+    qualifier_insertion,
+    sha256_bytes,
+    validate_faa_gbff,
+    validate_genbank_semantics,
+)
+
+GO_RE = re.compile(r"GO:\d{7}\Z")
+EC_RE = re.compile(r"\d+\.\d+\.\d+\.\d+\Z")
+KO_RE = re.compile(r"K\d{5}\Z")
+COG_RE = re.compile(r"COG\d{4}\Z")
+CAZY_RE = re.compile(r"(?:GH|GT|PL|CE|AA|CBM)\d+(?:_\d+)?\Z")
+QUERY_RE = re.compile(r"\S+\Z")
+VERSION_RE = re.compile(r"^##\s*emapper-([^\s]+)")
+CONFIDENCE_RANK = {"low": 0, "medium": 1, "high": 2}
+CONFIDENCE_CODE_RANK = {"l": 0, "m": 1, "h": 2}
+CONFIDENCE_FIELD_INDEX = {
+    "Preferred_name": 0,
+    "GOs": 1,
+    "EC": 2,
+    "KEGG_ko": 3,
+    "CAZy": 10,
+}
+REQUIRED_COLUMNS = (
+    "#query",
+    "seed_ortholog",
+    "evalue",
+    "score",
+    "COG_category",
+    "Preferred_name",
+    "GOs",
+    "EC",
+    "KEGG_ko",
+    "CAZy",
+    "annotation_confidence",
+)
+COMMENT_MARKER = "##enrich-bakta:eggNOG:v1##"
+
+
+@dataclass(frozen=True)
+class EggnogHit:
+    row_number: int
+    query_id: str
+    seed_ortholog: str
+    evalue: str
+    score: str
+    cog_category: str
+    preferred_name: str
+    gos: tuple[str, ...]
+    ec: tuple[str, ...]
+    kegg_ko: tuple[str, ...]
+    cazy: tuple[str, ...]
+    confidence: str
+    raw_fields: tuple[tuple[str, str], ...]
+
+    def raw(self, name: str) -> str:
+        return dict(self.raw_fields).get(name, "")
+
+
+@dataclass(frozen=True)
+class EggnogTable:
+    hits: tuple[EggnogHit, ...]
+    columns: tuple[str, ...]
+    version: str | None
+    format: str
+
+
+def _decimal(value: str, field: str, row_number: int) -> Decimal:
+    try:
+        parsed = Decimal(value)
+    except InvalidOperation as exc:
+        raise MergeError(f"eggNOG row {row_number}: invalid {field} {value!r}") from exc
+    if not parsed.is_finite() or (field == "E-value" and parsed < 0):
+        raise MergeError(f"eggNOG row {row_number}: invalid {field} {value!r}")
+    return parsed
+
+
+def _tokens(
+    value: str,
+    *,
+    field: str,
+    row_number: int,
+    pattern: re.Pattern[str],
+    prefix: str = "",
+) -> tuple[str, ...]:
+    if value in {"", "-"}:
+        return ()
+    result: list[str] = []
+    for raw in value.split(","):
+        token = raw.strip()
+        if prefix and token.lower().startswith(prefix.lower()):
+            token = token[len(prefix) :]
+        if not token or not pattern.fullmatch(token):
+            raise MergeError(f"eggNOG row {row_number}: invalid {field} value {raw!r}")
+        if token not in result:
+            result.append(token)
+    return tuple(result)
+
+
+def _parse_cazy(value: str, row_number: int) -> tuple[str, ...]:
+    if value in {"", "-"}:
+        return ()
+    result: list[str] = []
+    for raw in value.split(","):
+        family = raw.strip().split("|", 1)[0].strip()
+        if not CAZY_RE.fullmatch(family):
+            raise MergeError(f"eggNOG row {row_number}: invalid CAZy value {raw!r}")
+        if family not in result:
+            result.append(family)
+    return tuple(result)
+
+
+def _validate_confidence(value: str, row_number: int) -> str:
+    if len(value) != 13 or any(char not in {"l", "m", "h", "-"} for char in value):
+        raise MergeError(
+            f"eggNOG row {row_number}: annotation_confidence must contain 13 l/m/h/- codes"
+        )
+    return value
+
+
+def _build_hit(values: dict[str, str], row_number: int) -> EggnogHit:
+    for column in REQUIRED_COLUMNS:
+        if column not in values:
+            raise MergeError(f"eggNOG table is missing required column {column!r}")
+    query_id = values["#query"].strip()
+    if not QUERY_RE.fullmatch(query_id):
+        raise MergeError(
+            f"eggNOG row {row_number}: invalid query identifier {query_id!r}"
+        )
+    seed = values["seed_ortholog"].strip()
+    if not seed or seed == "-":
+        raise MergeError(f"eggNOG row {row_number}: missing seed_ortholog")
+    _decimal(values["evalue"].strip(), "E-value", row_number)
+    _decimal(values["score"].strip(), "score", row_number)
+    confidence = _validate_confidence(
+        values["annotation_confidence"].strip(), row_number
+    )
+    cog = values["COG_category"].strip()
+    if cog not in {"", "-"} and not (
+        COG_RE.fullmatch(cog) or re.fullmatch(r"[A-Z]+", cog)
+    ):
+        raise MergeError(f"eggNOG row {row_number}: invalid COG_category {cog!r}")
+    return EggnogHit(
+        row_number=row_number,
+        query_id=query_id,
+        seed_ortholog=seed,
+        evalue=values["evalue"].strip(),
+        score=values["score"].strip(),
+        cog_category=cog,
+        preferred_name=values["Preferred_name"].strip(),
+        gos=_tokens(
+            values["GOs"].strip(), field="GO", row_number=row_number, pattern=GO_RE
+        ),
+        ec=_tokens(
+            values["EC"].strip(),
+            field="EC",
+            row_number=row_number,
+            pattern=EC_RE,
+            prefix="ec:",
+        ),
+        kegg_ko=_tokens(
+            values["KEGG_ko"].strip(),
+            field="KEGG_ko",
+            row_number=row_number,
+            pattern=KO_RE,
+            prefix="ko:",
+        ),
+        cazy=_parse_cazy(values["CAZy"].strip(), row_number),
+        confidence=confidence,
+        raw_fields=tuple(values.items()),
+    )
+
+
+def parse_eggnog_tsv(
+    data: bytes, *, expected_version: str | None = None
+) -> EggnogTable:
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise MergeError(f"eggNOG TSV is not UTF-8 at byte {exc.start}") from exc
+    version: str | None = None
+    columns: list[str] | None = None
+    hits: list[EggnogHit] = []
+    query_ids: set[str] = set()
+    for row_number, line in enumerate(text.splitlines(), start=1):
+        if not line:
+            continue
+        if line.startswith("##"):
+            match = VERSION_RE.match(line)
+            if match:
+                version = match.group(1)
+            continue
+        if line.startswith("#"):
+            candidate = line.split("\t")
+            if candidate[0] == "#query":
+                if columns is not None:
+                    raise MergeError("eggNOG TSV contains duplicate #query header")
+                if len(candidate) != len(set(candidate)):
+                    raise MergeError("eggNOG TSV header contains duplicate columns")
+                columns = candidate
+            continue
+        if columns is None:
+            raise MergeError(
+                f"eggNOG row {row_number}: data appears before #query header"
+            )
+        fields = line.split("\t")
+        if len(fields) != len(columns):
+            raise MergeError(
+                f"eggNOG row {row_number}: expected {len(columns)} columns, found {len(fields)}"
+            )
+        hit = _build_hit(dict(zip(columns, fields, strict=True)), row_number)
+        if hit.query_id in query_ids:
+            raise MergeError(
+                f"eggNOG row {row_number}: duplicate query ID {hit.query_id!r}"
+            )
+        query_ids.add(hit.query_id)
+        hits.append(hit)
+    if columns is None:
+        raise MergeError("eggNOG TSV is missing the #query header")
+    if not hits:
+        raise MergeError("eggNOG TSV contains no annotation rows")
+    if expected_version is not None and version != expected_version:
+        raise MergeError(
+            f"eggNOG version mismatch: declared={version!r}, requested={expected_version!r}"
+        )
+    return EggnogTable(tuple(hits), tuple(columns), version, "tsv")
+
+
+def parse_eggnog_xlsx(
+    path: Path, *, expected_version: str | None = None
+) -> EggnogTable:
+    if expected_version is None:
+        raise MergeError(
+            "--eggnog-version is required for XLSX input without TSV metadata"
+        )
+    try:
+        import openpyxl  # type: ignore[import-untyped]
+    except ImportError as exc:
+        raise MergeError(
+            "XLSX input requires optional dependency openpyxl; TSV needs no extra dependency"
+        ) from exc
+    workbook = openpyxl.load_workbook(path, read_only=True, data_only=False)
+    if workbook.sheetnames != ["annotations"]:
+        raise MergeError(
+            "eggNOG XLSX must contain exactly one sheet named 'annotations'"
+        )
+    worksheet = workbook["annotations"]
+    rows = worksheet.iter_rows()
+    try:
+        header_cells = next(rows)
+    except StopIteration as exc:
+        raise MergeError("eggNOG XLSX is empty") from exc
+    columns = [
+        str(cell.value) if cell.value is not None else "" for cell in header_cells
+    ]
+    if len(columns) != len(set(columns)):
+        raise MergeError("eggNOG XLSX header contains duplicate columns")
+    hits: list[EggnogHit] = []
+    query_ids: set[str] = set()
+    for row_number, cells in enumerate(rows, start=2):
+        if all(cell.value is None for cell in cells):
+            continue
+        if len(cells) != len(columns):
+            raise MergeError(f"eggNOG XLSX row {row_number}: wrong cell count")
+        values: list[str] = []
+        for cell in cells:
+            if cell.data_type == "f":
+                raise MergeError(
+                    f"eggNOG XLSX row {row_number}: formulas are not accepted"
+                )
+            values.append("" if cell.value is None else str(cell.value))
+        hit = _build_hit(dict(zip(columns, values, strict=True)), row_number)
+        if hit.query_id in query_ids:
+            raise MergeError(
+                f"eggNOG XLSX row {row_number}: duplicate query ID {hit.query_id!r}"
+            )
+        query_ids.add(hit.query_id)
+        hits.append(hit)
+    if not hits:
+        raise MergeError("eggNOG XLSX contains no annotation rows")
+    return EggnogTable(tuple(hits), tuple(columns), expected_version, "xlsx")
+
+
+def parse_eggnog_path(
+    path: Path, *, expected_version: str | None = None
+) -> EggnogTable:
+    if path.suffix.lower() == ".xlsx":
+        return parse_eggnog_xlsx(path, expected_version=expected_version)
+    return parse_eggnog_tsv(path.read_bytes(), expected_version=expected_version)
+
+
+def _existing_values(feature: RawFeature, qualifier: str) -> set[str]:
+    values = set(feature.values(qualifier))
+    if qualifier == "EC_number":
+        values.update(
+            value[3:] for value in feature.values("db_xref") if value.startswith("EC:")
+        )
+    if qualifier == "db_xref":
+        values.update(
+            match.group(0)
+            for note in feature.values("note")
+            for match in re.finditer(
+                r"(?:GO:\d{7}|KEGG:K\d{5}|CAZy:(?:GH|GT|PL|CE|AA|CBM)\d+(?:_\d+)?)",
+                note,
+            )
+        )
+    return values
+
+
+def _paired_gene(base: RawDocument, cds: RawFeature) -> RawFeature | None:
+    candidates = [
+        feature
+        for feature in base.records[cds.record_index].features
+        if feature.feature_type == "gene"
+        and feature.locus_tag == cds.locus_tag
+        and feature.location == cds.location
+    ]
+    if len(candidates) != 1:
+        return None
+    return candidates[0]
+
+
+def _normalized_gene(raw: str, clean_suffix: bool) -> str:
+    value = raw.strip()
+    return re.sub(r"_\d+\Z", "", value) if clean_suffix else value
+
+
+def _confidence_passes(hit: EggnogHit, field: str, minimum: str) -> bool:
+    index = CONFIDENCE_FIELD_INDEX.get(field)
+    return index is None or (
+        hit.confidence[index] != "-"
+        and CONFIDENCE_CODE_RANK[hit.confidence[index]] >= CONFIDENCE_RANK[minimum]
+    )
+
+
+def plan_eggnog_additions(
+    base: RawDocument,
+    proteins: dict[str, str],
+    table: EggnogTable,
+    *,
+    eggnog_data: bytes,
+    faa_data: bytes,
+    min_confidence: str = "low",
+    clean_gene_suffix: bool = False,
+    add_comment_note: bool = True,
+    add_feature_provenance: bool = True,
+    merge_timestamp: str | None = None,
+    starting_order: int = 0,
+) -> tuple[list[Insertion], list[dict[str, Any]], dict[str, Any]]:
+    if min_confidence not in CONFIDENCE_RANK:
+        raise MergeError(f"invalid eggNOG confidence threshold {min_confidence!r}")
+    cds, validation = validate_faa_gbff(
+        base, proteins, (hit.query_id for hit in table.hits), source_name="eggNOG"
+    )
+    insertions: list[Insertion] = []
+    evidence: list[dict[str, Any]] = []
+    order = starting_order
+    planned = {
+        (feature.start, qualifier): set(feature.values(qualifier))
+        for feature in cds.values()
+        for qualifier in ("gene", "db_xref", "EC_number", "note", "inference")
+    }
+    emitted_by_query: set[str] = set()
+    stats: dict[str, Any] = {
+        **validation,
+        "rows": len(table.hits),
+        "format": table.format,
+        "eggnog_version": table.version or "",
+        "confidence_filtered": 0,
+        "candidate_values": 0,
+        "emitted_values": 0,
+    }
+
+    for hit in table.hits:
+        feature = cds[hit.query_id]
+        paired = _paired_gene(base, feature)
+        candidates: list[tuple[str, str, str, int | None]] = []
+        if hit.preferred_name not in {"", "-"}:
+            candidates.append(
+                (
+                    "Preferred_name",
+                    "gene",
+                    _normalized_gene(hit.preferred_name, clean_gene_suffix),
+                    CONFIDENCE_FIELD_INDEX["Preferred_name"],
+                )
+            )
+        candidates.extend(
+            ("GOs", "db_xref", value, CONFIDENCE_FIELD_INDEX["GOs"])
+            for value in hit.gos
+        )
+        candidates.extend(
+            ("EC", "EC_number", value, CONFIDENCE_FIELD_INDEX["EC"]) for value in hit.ec
+        )
+        candidates.extend(
+            ("KEGG_ko", "db_xref", f"KEGG:{value}", CONFIDENCE_FIELD_INDEX["KEGG_ko"])
+            for value in hit.kegg_ko
+        )
+        if COG_RE.fullmatch(hit.cog_category):
+            candidates.append(("COG_category", "note", f"COG:{hit.cog_category}", None))
+        candidates.extend(
+            ("CAZy", "db_xref", f"CAZy:{value}", CONFIDENCE_FIELD_INDEX["CAZy"])
+            for value in hit.cazy
+        )
+        for field, qualifier, value, confidence_index in candidates:
+            stats["candidate_values"] += 1
+            status = "existing"
+            emitted: list[str] = []
+            raw_value = hit.raw(field)
+            if confidence_index is not None and not _confidence_passes(
+                hit, field, min_confidence
+            ):
+                stats["confidence_filtered"] += 1
+                status = "filtered_confidence"
+            elif qualifier == "gene":
+                feature_genes = [
+                    item.strip() for item in feature.values("gene") if item.strip()
+                ]
+                paired_genes = (
+                    [item.strip() for item in paired.values("gene") if item.strip()]
+                    if paired
+                    else ["missing paired gene"]
+                )
+                if feature_genes or paired_genes:
+                    status = "existing_gene"
+                elif not paired:
+                    status = "unpaired_gene"
+                else:
+                    for target in (paired, feature):
+                        insertions.append(
+                            qualifier_insertion(
+                                base.data,
+                                target,
+                                "gene",
+                                value,
+                                "eggNOG",
+                                raw_value,
+                                order,
+                            )
+                        )
+                        order += 1
+                        planned.setdefault((target.start, "gene"), set()).add(value)
+                        emitted.append(f'{target.feature_type}:/gene="{value}"')
+                    status = "emitted"
+            elif value in planned[
+                (feature.start, qualifier)
+            ] or value in _existing_values(feature, qualifier):
+                status = "existing"
+            else:
+                insertions.append(
+                    qualifier_insertion(
+                        base.data, feature, qualifier, value, "eggNOG", raw_value, order
+                    )
+                )
+                order += 1
+                planned[(feature.start, qualifier)].add(value)
+                emitted.append(f'/{qualifier}="{value}"')
+                status = "emitted"
+            if emitted:
+                emitted_by_query.add(hit.query_id)
+                stats["emitted_values"] += len(emitted)
+            evidence.append(
+                {
+                    "entry_type": "eggnog_candidate",
+                    "row_number": hit.row_number,
+                    "query_id": hit.query_id,
+                    "record": feature.record_id,
+                    "feature_type": feature.feature_type,
+                    "locus_tag": feature.locus_tag or "",
+                    "field": field,
+                    "raw_value": raw_value,
+                    "normalized_value": value,
+                    "confidence_code": ""
+                    if confidence_index is None
+                    else hit.confidence[confidence_index],
+                    "status": status,
+                    "emitted_qualifiers": " | ".join(emitted),
+                    "seed_ortholog": hit.seed_ortholog,
+                    "e_value": hit.evalue,
+                    "score": hit.score,
+                    "raw_fields": dict(hit.raw_fields),
+                }
+            )
+        if hit.query_id in emitted_by_query and add_feature_provenance:
+            inference = f"DESCRIPTION:similar to AA sequence:eggNOG:{hit.seed_ortholog}"
+            values = planned[(feature.start, "inference")]
+            if inference not in values:
+                insertions.append(
+                    qualifier_insertion(
+                        base.data,
+                        feature,
+                        "inference",
+                        inference,
+                        "eggNOG provenance",
+                        hit.seed_ortholog,
+                        order,
+                    )
+                )
+                order += 1
+                values.add(inference)
+
+    eggnog_hash = sha256_bytes(eggnog_data)
+    faa_hash = sha256_bytes(faa_data)
+    if add_comment_note:
+        lines = [
+            f"Source eggNOG-mapper {table.version or 'unspecified'}; table sha256={eggnog_hash[:16]}",
+            f"FAA sha256={faa_hash[:16]}; rows={len(table.hits)}, mapped CDSs={len(cds)}.",
+            "eggNOG assignments are genomic evidence, not proof of activity or phenotype.",
+        ]
+        if merge_timestamp:
+            lines.append(f"Merge timestamp: {merge_timestamp}")
+        for record in base.records:
+            insertion = comment_insertion(
+                base,
+                record,
+                f"{COMMENT_MARKER}:{eggnog_hash[:12]}:{faa_hash[:12]}",
+                lines,
+                "eggNOG provenance",
+                order,
+            )
+            if insertion is not None:
+                insertions.append(insertion)
+                order += 1
+    stats.update(
+        {
+            "eggnog_sha256": eggnog_hash,
+            "faa_sha256": faa_hash,
+            "hit_cds": len(emitted_by_query),
+            "planned_insertions": len(insertions),
+        }
+    )
+    return insertions, evidence, stats
+
+
+def merge(
+    bakta_path: Path,
+    faa_path: Path,
+    eggnog_path: Path,
+    output_path: Path,
+    *,
+    manifest_path: Path | None = None,
+    eggnog_version: str | None = None,
+    min_confidence: str = "low",
+    clean_gene_suffix: bool = False,
+    add_comment_note: bool = True,
+    add_feature_provenance: bool = True,
+    merge_timestamp: str | None = None,
+) -> dict[str, Any]:
+    base_data, faa_data, eggnog_data = (
+        bakta_path.read_bytes(),
+        faa_path.read_bytes(),
+        eggnog_path.read_bytes(),
+    )
+    validate_genbank_semantics(base_data, "Bakta input")
+    base = parse_genbank_bytes(base_data, "Bakta input")
+    table = parse_eggnog_path(eggnog_path, expected_version=eggnog_version)
+    insertions, evidence, stats = plan_eggnog_additions(
+        base,
+        parse_faa(faa_data),
+        table,
+        eggnog_data=eggnog_data,
+        faa_data=faa_data,
+        min_confidence=min_confidence,
+        clean_gene_suffix=clean_gene_suffix,
+        add_comment_note=add_comment_note,
+        add_feature_provenance=add_feature_provenance,
+        merge_timestamp=merge_timestamp,
+    )
+    final = finalize_merge(
+        base_path=bakta_path,
+        output_path=output_path,
+        other_inputs=[faa_path, eggnog_path],
+        insertions=insertions,
+        manifest_path=manifest_path,
+        evidence_rows=evidence,
+        metadata={
+            "operation": "eggnog-merge",
+            "eggnog_sha256": stats["eggnog_sha256"],
+            "faa_sha256": stats["faa_sha256"],
+            "eggnog_version": stats["eggnog_version"],
+            "min_eggnog_confidence": min_confidence,
+            "merge_timestamp": merge_timestamp or "",
+        },
+    )
+    return {"eggnog": stats, **final}
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Merge sequence-validated eggNOG-mapper evidence onto a Bakta GBFF."
+    )
+    parser.add_argument("bakta", type=Path)
+    parser.add_argument("faa", type=Path)
+    parser.add_argument("eggnog", type=Path)
+    parser.add_argument("output", type=Path)
+    parser.add_argument("--manifest", type=Path)
+    parser.add_argument("--eggnog-version")
+    parser.add_argument(
+        "--min-eggnog-confidence", choices=tuple(CONFIDENCE_RANK), default="low"
+    )
+    parser.add_argument("--clean-gene-suffix", action="store_true")
+    parser.add_argument("--no-comment-note", action="store_true")
+    parser.add_argument("--no-feature-provenance", action="store_true")
+    parser.add_argument("--merge-timestamp")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+    for label, path in (
+        ("Bakta", args.bakta),
+        ("FAA", args.faa),
+        ("eggNOG", args.eggnog),
+    ):
+        if not path.is_file():
+            parser.error(f"{label} input not found: {path}")
+    try:
+        stats = merge(
+            args.bakta,
+            args.faa,
+            args.eggnog,
+            args.output,
+            manifest_path=args.manifest,
+            eggnog_version=args.eggnog_version,
+            min_confidence=args.min_eggnog_confidence,
+            clean_gene_suffix=args.clean_gene_suffix,
+            add_comment_note=not args.no_comment_note,
+            add_feature_provenance=not args.no_feature_provenance,
+            merge_timestamp=args.merge_timestamp,
+        )
+    except MergeError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(stats, indent=2, sort_keys=True))
+    else:
+        print("eggNOG merge passed FAA/GBFF identity and byte-preservation audits.")
+        print(f"  annotation rows: {stats['eggnog']['rows']:,}")
+        print(f"  emitted values:  {stats['eggnog']['emitted_values']:,}")
+        print(f"  output SHA-256:  {stats['output_sha256']}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -433,6 +433,98 @@ def normalize_protein(sequence: str) -> str:
     return value.removesuffix("*")
 
 
+def parse_faa(data: bytes) -> dict[str, str]:
+    """Parse a UTF-8 protein FAA without silently normalizing identifiers."""
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise MergeError(f"FAA is not UTF-8 at byte {exc.start}") from exc
+    proteins: dict[str, str] = {}
+    try:
+        for record in SeqIO.parse(io.StringIO(text), "fasta"):
+            if record.id in proteins:
+                raise MergeError(f"FAA contains duplicate record ID {record.id!r}")
+            sequence = normalize_protein(str(record.seq))
+            if not sequence:
+                raise MergeError(
+                    f"FAA record {record.id!r} has an empty protein sequence"
+                )
+            proteins[record.id] = sequence
+    except MergeError:
+        raise
+    except Exception as exc:
+        raise MergeError(f"FAA parsing failed: {exc}") from exc
+    if not proteins:
+        raise MergeError("FAA contains no protein records")
+    return proteins
+
+
+def cds_by_locus(base: RawDocument) -> dict[str, RawFeature]:
+    """Build a global CDS locus index, rejecting ambiguous record membership."""
+    result: dict[str, RawFeature] = {}
+    for feature in base.features:
+        if feature.feature_type != "CDS" or not feature.locus_tag:
+            continue
+        if feature.locus_tag in result:
+            other = result[feature.locus_tag]
+            raise MergeError(
+                f"GBFF duplicate CDS locus_tag {feature.locus_tag!r} in "
+                f"{other.record_id!r} and {feature.record_id!r}"
+            )
+        result[feature.locus_tag] = feature
+    return result
+
+
+def validate_faa_gbff(
+    base: RawDocument,
+    proteins: dict[str, str],
+    query_ids: Iterable[str],
+    *,
+    source_name: str,
+) -> tuple[dict[str, RawFeature], dict[str, Any]]:
+    """Prove that every evidence query maps exactly to an identical GBFF CDS."""
+    cds = cds_by_locus(base)
+    unique_ids = set(query_ids)
+    missing_faa = sorted(unique_ids - proteins.keys())
+    missing_gbff = sorted(unique_ids - cds.keys())
+    if missing_faa or missing_gbff:
+        raise MergeError(
+            f"{source_name} query IDs do not map exactly: "
+            + json.dumps(
+                {
+                    "missing_from_faa": missing_faa[:25],
+                    "missing_from_gbff": missing_gbff[:25],
+                },
+                indent=2,
+            )
+        )
+    mismatches: list[str] = []
+    missing_translations: list[str] = []
+    for query_id in sorted(unique_ids):
+        translations = cds[query_id].values("translation")
+        if len(translations) != 1 or not normalize_protein(translations[0]):
+            missing_translations.append(query_id)
+        elif normalize_protein(translations[0]) != proteins[query_id]:
+            mismatches.append(query_id)
+    if missing_translations or mismatches:
+        raise MergeError(
+            f"{source_name} FAA/GBFF protein validation failed: "
+            + json.dumps(
+                {
+                    "missing_or_ambiguous_translation": missing_translations[:25],
+                    "sequence_mismatches": mismatches[:25],
+                },
+                indent=2,
+            )
+        )
+    return cds, {
+        "faa_records": len(proteins),
+        "faa_gbff_sequence_matches": len(unique_ids),
+        "missing_faa_query_ids": 0,
+        "missing_gbff_query_ids": 0,
+    }
+
+
 def protein_sha256(sequence: str) -> str:
     return sha256_bytes(normalize_protein(sequence).encode("ascii"))
 
@@ -454,16 +546,22 @@ def format_qualifier(key: str, value: str, newline: bytes) -> bytes:
     escaped = value.replace('"', '""')
     payload = f'/{key}="{escaped}"'
     width = 80 - len(QUALIFIER_INDENT)
-    chunks: list[bytes] = []
-    current = bytearray()
-    for character in payload:
-        encoded = character.encode("utf-8")
-        if current and len(current) + len(encoded) > width:
-            chunks.append(bytes(current))
-            current.clear()
-        current.extend(encoded)
-    chunks.append(bytes(current))
-    return b"".join(QUALIFIER_INDENT + chunk + newline for chunk in chunks)
+    chunks = (
+        [payload]
+        if key == "inference"
+        else textwrap.wrap(
+            payload,
+            width=width,
+            break_long_words=True,
+            break_on_hyphens=False,
+            replace_whitespace=False,
+            drop_whitespace=True,
+        )
+        or [payload]
+    )
+    return b"".join(
+        QUALIFIER_INDENT + chunk.encode("utf-8") + newline for chunk in chunks
+    )
 
 
 def qualifier_insertion(
@@ -540,7 +638,10 @@ def comment_insertion(
 
 
 def apply_insertions(
-    base_data: bytes, insertions: list[Insertion]
+    base_data: bytes,
+    insertions: list[Insertion],
+    *,
+    extra_allowed_qualifiers: Iterable[str] = (),
 ) -> tuple[bytes, list[AppliedInsertion]]:
     """Apply a fully computed allowlist and prove exact reversibility."""
     allowed_qualifiers = {
@@ -551,6 +652,7 @@ def apply_insertions(
         "inference",
         "COMMENT",
     }
+    allowed_qualifiers.update(extra_allowed_qualifiers)
     ordered = sorted(insertions, key=lambda item: (item.offset, item.order))
     cursor = 0
     output = bytearray()
@@ -640,6 +742,110 @@ def insertion_rows(applied: list[AppliedInsertion]) -> list[dict[str, Any]]:
     return rows
 
 
+def reconcile_insertions(
+    insertions: Iterable[Insertion], *, gene_conflict_policy: str = "skip"
+) -> tuple[list[Insertion], list[dict[str, Any]], dict[str, Any]]:
+    """Collapse exact overlaps and resolve paired gene-symbol disagreements."""
+    if gene_conflict_policy not in {"skip", "prefer-eggnog", "prefer-baktfold"}:
+        raise MergeError(f"invalid gene conflict policy {gene_conflict_policy!r}")
+    ordered = sorted(
+        insertions,
+        key=lambda item: (
+            item.record,
+            item.locus_tag,
+            item.feature_type,
+            item.qualifier,
+            item.value,
+            item.order,
+            item.source,
+        ),
+    )
+    rows: list[dict[str, Any]] = []
+    gene_values: dict[tuple[str, str], set[str]] = collections.defaultdict(set)
+    for item in ordered:
+        if item.qualifier == "gene":
+            gene_values[(item.record, item.locus_tag)].add(item.value)
+    conflicts = {key: values for key, values in gene_values.items() if len(values) > 1}
+    preferred_source = {
+        "prefer-eggnog": "eggnog",
+        "prefer-baktfold": "baktfold",
+    }.get(gene_conflict_policy)
+    filtered: list[Insertion] = []
+    for item in ordered:
+        conflict_values = conflicts.get((item.record, item.locus_tag))
+        if (
+            item.qualifier == "gene"
+            and conflict_values
+            and (preferred_source is None or item.source.lower() != preferred_source)
+        ):
+            continue
+        filtered.append(item)
+    unique: dict[tuple[str, str, str, str, str], Insertion] = {}
+    sources: dict[tuple[str, str, str, str, str], set[str]] = collections.defaultdict(
+        set
+    )
+    for item in filtered:
+        key = (
+            item.record,
+            item.feature_type,
+            item.locus_tag,
+            item.qualifier,
+            item.value,
+        )
+        sources[key].add(item.source)
+        unique.setdefault(key, item)
+    for key, supported_by in sorted(sources.items()):
+        if len(supported_by) > 1:
+            rows.append(
+                {
+                    "entry_type": "reconciliation",
+                    "record": key[0],
+                    "feature_type": key[1],
+                    "locus_tag": key[2],
+                    "qualifier": key[3],
+                    "value": key[4],
+                    "status": "exact_duplicate_collapsed",
+                    "supporting_sources": " | ".join(sorted(supported_by)),
+                }
+            )
+    for (record, locus_tag), values in sorted(conflicts.items()):
+        rows.append(
+            {
+                "entry_type": "reconciliation",
+                "record": record,
+                "locus_tag": locus_tag,
+                "qualifier": "gene",
+                "value": " | ".join(sorted(values)),
+                "status": "gene_conflict_skipped"
+                if preferred_source is None
+                else gene_conflict_policy,
+                "supporting_sources": " | ".join(
+                    sorted(
+                        {
+                            item.source
+                            for item in ordered
+                            if item.record == record
+                            and item.locus_tag == locus_tag
+                            and item.qualifier == "gene"
+                        }
+                    )
+                ),
+            }
+        )
+    reconciled = sorted(unique.values(), key=lambda item: (item.offset, item.order))
+    return (
+        reconciled,
+        rows,
+        {
+            "input_insertions": len(ordered),
+            "reconciled_insertions": len(reconciled),
+            "exact_duplicates_collapsed": len(filtered) - len(reconciled),
+            "gene_conflicts": len(conflicts),
+            "gene_conflict_policy": gene_conflict_policy,
+        },
+    )
+
+
 def write_manifest(
     path: Path, metadata: dict[str, Any], rows: list[dict[str, Any]]
 ) -> None:
@@ -705,6 +911,7 @@ def finalize_merge(
     manifest_path: Path | None,
     metadata: dict[str, Any],
     evidence_rows: list[dict[str, Any]] | None = None,
+    extra_allowed_qualifiers: Iterable[str] = (),
 ) -> dict[str, Any]:
     inputs = [base_path, *other_inputs]
     if paths_collide(output_path, inputs):
@@ -714,7 +921,9 @@ def finalize_merge(
     ):
         raise MergeError("manifest path must differ from inputs and output")
     base_data = base_path.read_bytes()
-    merged, applied = apply_insertions(base_data, insertions)
+    merged, applied = apply_insertions(
+        base_data, insertions, extra_allowed_qualifiers=extra_allowed_qualifiers
+    )
     validate_genbank_semantics(merged, "merged output")
     parsed_output = parse_genbank_bytes(merged, "merged output")
     metadata = {

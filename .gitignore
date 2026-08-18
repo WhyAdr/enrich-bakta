@@ -11,5 +11,10 @@ __pycache__/
 BK71A-restored.gbff
 *-KofamKOALA.txt
 *-result_ko-for-kegg-mapper.txt
+*-emapper_annotations.xlsx
+*.emapper.annotations
+*.emapper.hits
+*.emapper.seed_orthologs*
+*-timing.json
 /.test-output/
 .pytest_cache/
