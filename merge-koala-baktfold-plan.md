@@ -1,6 +1,6 @@
 # Plan: merge KofamScan/KOALA and Baktfold annotations onto Bakta GBFF
 
-Status: draft
+Status: implemented (2026-08-18)
 
 ## Goal
 
@@ -281,3 +281,16 @@ let a Baktfold-added qualifier suppress a Kofam evidence record, or vice versa.
 5. Keep large/private GBFF, FAA, and Kofam inputs out of any future commit;
    commit only scripts, small fixtures, tests, and this plan when explicitly
    requested.
+
+## Implementation result
+
+The plan is implemented in `merge_engine.py`,
+`graft_baktfold_additions.py`, and `merge_kofamscan_bakta.py` with synthetic
+coverage in `tests/test_merge_pipeline.py`. The Kofam command supports both the
+focused four-input interface and the preferred one-pass combined operation via
+`--baktfold`.
+
+One audited input nuance is now explicit in the validation policy: Bakta FAA
+files can contain translated pseudogene candidates for which Bakta omits a
+GBFF `/translation`. Non-hit FAA entries are allowed, while every Kofam hit is
+still required to have an exact normalized FAA-to-GBFF translation match.
