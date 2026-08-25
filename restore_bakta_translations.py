@@ -112,11 +112,14 @@ def restore(
     manifest_path: Path | None = None,
     eggnog_version: str | None = None,
 ) -> dict[str, Any]:
-    _base, _faa_data, table, insertions, evidence_rows, stats = prepare_restoration(
-        bakta_path, faa_path, eggnog_path, eggnog_version=eggnog_version
+    _base, base_data, _faa_data, table, insertions, evidence_rows, stats = (
+        prepare_restoration(
+            bakta_path, faa_path, eggnog_path, eggnog_version=eggnog_version
+        )
     )
     final = finalize_merge(
         base_path=bakta_path,
+        base_data=base_data,
         output_path=output_path,
         other_inputs=[faa_path, eggnog_path],
         insertions=insertions,
@@ -142,6 +145,7 @@ def prepare_restoration(
 ) -> tuple[
     RawDocument,
     bytes,
+    bytes,
     EggnogTable,
     list[Insertion],
     list[dict[str, Any]],
@@ -156,7 +160,7 @@ def prepare_restoration(
     insertions, evidence_rows, stats = plan_translation_restoration(
         base, parse_faa(faa_data), table, faa_data=faa_data
     )
-    return base, faa_data, table, insertions, evidence_rows, stats
+    return base, base_data, faa_data, table, insertions, evidence_rows, stats
 
 
 def main() -> int:

@@ -251,6 +251,7 @@ def graft(
     )
     final = finalize_merge(
         base_path=bakta_path,
+        base_data=bakta_data,
         output_path=output_path,
         other_inputs=[baktfold_path],
         insertions=insertions,

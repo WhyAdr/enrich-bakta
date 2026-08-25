@@ -15,10 +15,13 @@ from merge_engine import (
     Insertion,
     MergeError,
     apply_insertions,
+    finalize_merge,
     format_qualifier,
     parse_genbank_bytes,
+    qualifier_insertion,
     reconcile_insertions,
     strict_parity_check,
+    validate_genbank_semantics,
 )
 from merge_kofamscan_bakta import merge, parse_kofam_table
 from restore_bakta_translations import restore
@@ -327,10 +330,56 @@ def test_parser_numeric_validation_and_insertion_allowlist() -> None:
 def test_quoted_formatter_wraps_and_biopython_parses() -> None:
     value = 'quoted "value" ' + "x" * 100
     rendered = format_qualifier("note", value, b"\n")
-    assert all(len(line) <= 80 for line in rendered.splitlines())
     data = record_bytes("TEST", "T_0001").replace(b"ORIGIN\n", rendered + b"ORIGIN\n")
     records = list(SeqIO.parse(io.StringIO(data.decode()), "genbank"))
     assert len(records) == 1
+    assert records[0].features[-1].qualifiers["note"][-1] == value
+
+
+def test_qualifier_wrapping_cannot_create_a_phantom_qualifier() -> None:
+    value = "a" * 55 + "/bogus_key=oops"
+    rendered = format_qualifier("note", value, b"\n")
+    assert not any(
+        line.startswith(b"                     /") for line in rendered.splitlines()[1:]
+    )
+    data = record_bytes("TEST", "T_0001").replace(b"ORIGIN\n", rendered + b"ORIGIN\n")
+    record = next(SeqIO.parse(io.StringIO(data.decode()), "genbank"))
+    assert record.features[-1].qualifiers["note"][-1] == value
+    assert "bogus_key" not in record.features[-1].qualifiers
+    with pytest.raises(MergeError, match="control character"):
+        format_qualifier("note", "unsafe\nvalue", b"\n")
+
+
+def test_finalize_rejects_a_base_changed_after_planning(tmp_path: Path) -> None:
+    original = record_bytes("TEST", "T_0001")
+    base_path = write(tmp_path / "base.gbff", original)
+    document = parse_genbank_bytes(original)
+    feature = next(item for item in document.features if item.feature_type == "CDS")
+    insertion = qualifier_insertion(
+        original, feature, "EC_number", "1.2.3.4", "test", "test", 0
+    )
+    base_path.write_bytes(original.replace(b"test protein", b"test protein changed"))
+    output = tmp_path / "out.gbff"
+    with pytest.raises(MergeError, match="changed on disk since planning"):
+        finalize_merge(
+            base_path=base_path,
+            base_data=original,
+            output_path=output,
+            other_inputs=[],
+            insertions=[insertion],
+            manifest_path=None,
+            metadata={"operation": "test"},
+        )
+    assert not output.exists()
+
+
+def test_biopython_parser_warnings_are_merge_errors() -> None:
+    malformed = record_bytes("TEST", "T_0001").replace(
+        b"LOCUS       TEST                       9 bp",
+        b"LOCUS       TEST 9 bp                  ",
+    )
+    with pytest.raises(MergeError, match="Biopython GenBank warning"):
+        validate_genbank_semantics(malformed, "warning fixture")
 
 
 def test_eggnog_header_driven_parser_and_merge_provenance(tmp_path: Path) -> None:

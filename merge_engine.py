@@ -11,12 +11,13 @@ import os
 import re
 import tempfile
 import textwrap
+import warnings
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from Bio import SeqIO
+from Bio import BiopythonParserWarning, SeqIO
 
 QUALIFIER_INDENT = b" " * 21
 _FEATURE_RE = re.compile(rb"^ {5}(\S+)\s+(.+)$")
@@ -298,7 +299,11 @@ def validate_genbank_semantics(data: bytes, label: str = "GenBank input") -> int
         # lossless one-codepoint-per-byte semantic view for legacy comments.
         text = data.decode("latin-1")
     try:
-        records = list(SeqIO.parse(io.StringIO(text), "genbank"))
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", BiopythonParserWarning)
+            records = list(SeqIO.parse(io.StringIO(text), "genbank"))
+    except BiopythonParserWarning as exc:
+        raise MergeError(f"{label}: Biopython GenBank warning: {exc}") from exc
     except Exception as exc:  # Biopython exposes multiple parser exception types
         raise MergeError(f"{label}: Biopython GenBank parsing failed: {exc}") from exc
     if not records:
@@ -543,22 +548,25 @@ def newline_for_offset(data: bytes, offset: int) -> bytes:
 def format_qualifier(key: str, value: str, newline: bytes) -> bytes:
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
         raise MergeError(f"invalid qualifier name: {key!r}")
+    if any(character in value for character in "\r\n\t"):
+        raise MergeError(f"qualifier /{key} value contains a control character")
     escaped = value.replace('"', '""')
     payload = f'/{key}="{escaped}"'
     width = 80 - len(QUALIFIER_INDENT)
-    chunks = (
-        [payload]
-        if key == "inference"
-        else textwrap.wrap(
+    chunks = [payload]
+    if key != "inference":
+        candidate_chunks = textwrap.wrap(
             payload,
             width=width,
-            break_long_words=True,
+            break_long_words=False,
             break_on_hyphens=False,
             replace_whitespace=False,
             drop_whitespace=True,
-        )
-        or [payload]
-    )
+        ) or [payload]
+        # A continuation line beginning with '/' is parsed as a new qualifier.
+        # Keeping this uncommon value on one long line preserves its semantics.
+        if not any(chunk.startswith("/") for chunk in candidate_chunks[1:]):
+            chunks = candidate_chunks
     return b"".join(
         QUALIFIER_INDENT + chunk.encode("utf-8") + newline for chunk in chunks
     )
@@ -915,6 +923,7 @@ def write_json_sidecar(path: Path, payload: dict[str, Any]) -> None:
 def finalize_merge(
     *,
     base_path: Path,
+    base_data: bytes,
     output_path: Path,
     other_inputs: Iterable[Path],
     insertions: list[Insertion],
@@ -941,7 +950,10 @@ def finalize_merge(
         [*inputs, output_path, *([manifest_path] if manifest_path else [])],
     ):
         raise MergeError("sidecar path must differ from inputs, output, and manifest")
-    base_data = base_path.read_bytes()
+    if sha256_file(base_path) != sha256_bytes(base_data):
+        raise MergeError(
+            "base file changed on disk since planning; re-run the merge before writing"
+        )
     merged, applied = apply_insertions(
         base_data, insertions, extra_allowed_qualifiers=extra_allowed_qualifiers
     )

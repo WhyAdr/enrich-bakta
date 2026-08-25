@@ -135,6 +135,7 @@ def enrich(
     metadata.update(reconciliation)
     return finalize_merge(
         base_path=bakta_path,
+        base_data=base_data,
         output_path=output_path,
         other_inputs=other_inputs,
         insertions=insertions,

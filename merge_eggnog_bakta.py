@@ -784,6 +784,7 @@ def merge(
     context_report["metadata"]["operation"] = "eggnog-merge"
     final = finalize_merge(
         base_path=bakta_path,
+        base_data=base_data,
         output_path=output_path,
         other_inputs=[faa_path, eggnog_path],
         insertions=insertions,
