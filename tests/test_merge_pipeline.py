@@ -236,6 +236,28 @@ def test_kofam_multiple_hits_existing_ko_manifest_and_no_ec_inference(
     assert "[EC:1.2.3.4]" in hit_rows[0]["definition"]
 
 
+def test_kofam_feature_provenance_flag_keeps_hit_evidence(tmp_path: Path) -> None:
+    base = write(tmp_path / "base.gbff", record_bytes("TEST", "T_0001"))
+    faa = write(tmp_path / "base.faa", b">T_0001\nMK\n")
+    kofam = write(
+        tmp_path / "kofam.txt",
+        kofam_bytes("* T_0001 K00001 1 2 3e-4 alpha protein"),
+    )
+    output = tmp_path / "out.gbff"
+    stats = merge(
+        base,
+        faa,
+        kofam,
+        output,
+        add_comment_note=False,
+        add_feature_provenance=False,
+    )
+    text = output.read_text()
+    assert "/inference=" not in text
+    assert '/note="KofamScan:K00001;threshold=1;score=2;E-value=3e-4"' in text
+    assert stats["kofam"]["feature_provenance"] is False
+
+
 def test_combined_merge_is_idempotent_and_preserves_crlf(tmp_path: Path) -> None:
     base_data = record_bytes("TEST", "T_0001", newline=b"\r\n")
     base = write(tmp_path / "base.gbff", base_data)
@@ -473,6 +495,14 @@ def test_eggnog_pfam_og_notes_manifest_and_context_sidecar(
     assert og_rows[0]["normalized_value"] == "eggNOG_OG:OG1@1|S-1"
     assert og_rows[0]["source_token"] == "OG1@1|S-1"
     assert len(context_rows) == 9
+    raw_rows = [row for row in manifest_entries if row["entry_type"] == "eggnog_row"]
+    assert len(raw_rows) == 1
+    assert raw_rows[0]["raw_fields"]["#query"] == "T_0001"
+    assert all(
+        "raw_fields" not in row
+        for row in manifest_entries
+        if row["entry_type"] != "eggnog_row"
+    )
     pathway_row = next(row for row in context_rows if row["field"] == "KEGG_Pathway")
     assert pathway_row["status"] == "sidecar_only"
     assert pathway_row["normalized_values"] == ["00910", "01100"]
@@ -667,6 +697,9 @@ def test_reconciliation_collapses_duplicates_and_handles_gene_conflicts() -> Non
 
 def test_unified_merge_reconciles_eggnog_and_kofam(tmp_path: Path) -> None:
     base = write(tmp_path / "base.gbff", record_bytes("TEST", "T_0001"))
+    baktfold = write(
+        tmp_path / "baktfold.gbff", record_bytes("TEST", "T_0001", gene="abc")
+    )
     faa = write(tmp_path / "base.faa", b">T_0001\nMK\n")
     kofam = write(tmp_path / "kofam.txt", kofam_bytes("* T_0001 K00001 1 2 3e-4 alpha"))
     eggnog = write(
@@ -680,6 +713,7 @@ def test_unified_merge_reconciles_eggnog_and_kofam(tmp_path: Path) -> None:
         bakta_path=base,
         output_path=output,
         faa_path=faa,
+        baktfold_path=baktfold,
         kofamscan_path=kofam,
         eggnog_path=eggnog,
         manifest_path=manifest,
@@ -690,7 +724,15 @@ def test_unified_merge_reconciles_eggnog_and_kofam(tmp_path: Path) -> None:
     assert (
         json.loads(context.read_text())["metadata"]["operation"] == "unified-enrichment"
     )
-    entries = __import__("json").loads(manifest.read_text())["entries"]
+    payload = json.loads(manifest.read_text())
+    metadata = payload["metadata"]
+    assert metadata["faa_sha256"]
+    assert metadata["baktfold_sha256"]
+    assert metadata["baktfold_version"] == "0.1.0"
+    assert metadata["kofam_sha256"]
+    assert metadata["eggnog_sha256"]
+    assert metadata["tool_version"] == "0.2.0"
+    entries = payload["entries"]
     assert any(row.get("status") == "exact_duplicate_collapsed" for row in entries)
 
 
@@ -711,3 +753,18 @@ def test_translation_restoration_is_limited_to_eggnog_pseudogenes(
     stats = restore(base, faa, eggnog, output, eggnog_version="3.0.0-beta6")
     assert stats["restored_translation_count"] == 1
     assert output.read_bytes().count(b'/translation="MK"') == 1
+
+
+def test_translation_restoration_validates_existing_translations(
+    tmp_path: Path,
+) -> None:
+    base = write(tmp_path / "base.gbff", record_bytes("TEST", "T_0001"))
+    faa = write(tmp_path / "base.faa", b">T_0001\nMM\n")
+    eggnog = write(
+        tmp_path / "annotations.tsv",
+        eggnog_bytes("T_0001\tseed\t1e-4\t10\t-\t-\t-\t-\t-\t-\thhhhhhhhhhhhh"),
+    )
+    output = tmp_path / "restored.gbff"
+    with pytest.raises(MergeError, match="sequence_mismatches"):
+        restore(base, faa, eggnog, output)
+    assert not output.exists()

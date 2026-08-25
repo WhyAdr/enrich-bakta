@@ -17,6 +17,7 @@ from merge_engine import (
     parse_faa,
     parse_genbank_bytes,
     reconcile_insertions,
+    sha256_bytes,
     validate_genbank_semantics,
 )
 from merge_kofamscan_bakta import parse_kofam_table, plan_kofam_additions
@@ -53,12 +54,14 @@ def enrich(
     base_data = bakta_path.read_bytes()
     validate_genbank_semantics(base_data, "Bakta input")
     base = parse_genbank_bytes(base_data, "Bakta input")
-    proteins = parse_faa(faa_path.read_bytes()) if faa_path else None
+    faa_data = faa_path.read_bytes() if faa_path else b""
+    proteins = parse_faa(faa_data) if faa_path else None
     insertions = []
     evidence_rows: list[dict[str, Any]] = []
     metadata: dict[str, Any] = {
         "operation": "unified-enrichment",
         "merge_timestamp": merge_timestamp or "",
+        "faa_sha256": sha256_bytes(faa_data) if faa_path else "",
     }
     other_inputs: list[Path] = []
     if faa_path:
@@ -78,6 +81,7 @@ def enrich(
         )
         insertions.extend(planned)
         metadata["baktfold_sha256"] = stats["baktfold_sha256"]
+        metadata["baktfold_version"] = stats["baktfold_version"]
         other_inputs.append(baktfold_path)
     if kofamscan_path:
         data = kofamscan_path.read_bytes()
@@ -86,11 +90,15 @@ def enrich(
             proteins or {},
             parse_kofam_table(data),
             kofam_data=data,
-            faa_data=faa_path.read_bytes() if faa_path else b"",
+            faa_data=faa_data,
             kofamscan_version=kofamscan_version,
             add_comment_note=add_comment_note,
+            add_feature_provenance=add_feature_provenance,
             merge_timestamp=merge_timestamp,
-            starting_order=1_000_000,
+            starting_order=max(
+                (insertion.order for insertion in insertions), default=-1
+            )
+            + 1,
         )
         insertions.extend(planned)
         evidence_rows.extend(rows)
@@ -103,18 +111,23 @@ def enrich(
         other_inputs.append(kofamscan_path)
     if eggnog_path:
         data = eggnog_path.read_bytes()
-        table = parse_eggnog_path(eggnog_path, expected_version=eggnog_version)
+        table = parse_eggnog_path(
+            eggnog_path, expected_version=eggnog_version, data=data
+        )
         planned, rows, stats = plan_eggnog_additions(
             base,
             proteins or {},
             table,
             eggnog_data=data,
-            faa_data=faa_path.read_bytes() if faa_path else b"",
+            faa_data=faa_data,
             min_confidence=min_eggnog_confidence,
             add_comment_note=add_comment_note,
             add_feature_provenance=add_feature_provenance,
             merge_timestamp=merge_timestamp,
-            starting_order=2_000_000,
+            starting_order=max(
+                (insertion.order for insertion in insertions), default=-1
+            )
+            + 1,
         )
         context_report = stats.pop("_context_report")
         context_report["metadata"]["operation"] = "unified-enrichment"

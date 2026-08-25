@@ -429,11 +429,14 @@ def parse_eggnog_xlsx(
 
 
 def parse_eggnog_path(
-    path: Path, *, expected_version: str | None = None
+    path: Path, *, expected_version: str | None = None, data: bytes | None = None
 ) -> EggnogTable:
     if path.suffix.lower() == ".xlsx":
         return parse_eggnog_xlsx(path, expected_version=expected_version)
-    return parse_eggnog_tsv(path.read_bytes(), expected_version=expected_version)
+    return parse_eggnog_tsv(
+        data if data is not None else path.read_bytes(),
+        expected_version=expected_version,
+    )
 
 
 def _existing_values(feature: RawFeature, qualifier: str) -> set[str]:
@@ -454,17 +457,22 @@ def _existing_values(feature: RawFeature, qualifier: str) -> set[str]:
     return values
 
 
-def _paired_gene(base: RawDocument, cds: RawFeature) -> RawFeature | None:
-    candidates = [
-        feature
-        for feature in base.records[cds.record_index].features
-        if feature.feature_type == "gene"
-        and feature.locus_tag == cds.locus_tag
-        and feature.location == cds.location
-    ]
-    if len(candidates) != 1:
-        return None
-    return candidates[0]
+def _index_paired_genes(
+    base: RawDocument,
+) -> dict[tuple[int, str, str], RawFeature | None]:
+    index: dict[tuple[int, str, str], RawFeature | None] = {}
+    for feature in base.features:
+        if feature.feature_type != "gene" or not feature.locus_tag:
+            continue
+        key = (feature.record_index, feature.locus_tag, feature.location)
+        index[key] = None if key in index else feature
+    return index
+
+
+def _paired_gene(
+    index: dict[tuple[int, str, str], RawFeature | None], cds: RawFeature
+) -> RawFeature | None:
+    return index.get((cds.record_index, cds.locus_tag or "", cds.location))
 
 
 def _normalized_gene(raw: str, clean_suffix: bool) -> str:
@@ -553,7 +561,6 @@ def _collect_context(
                     "seed_ortholog": hit.seed_ortholog,
                     "e_value": hit.evalue,
                     "score": hit.score,
-                    "raw_fields": dict(hit.raw_fields),
                 }
             )
         if context:
@@ -602,6 +609,7 @@ def plan_eggnog_additions(
         for qualifier in ("gene", "db_xref", "EC_number", "note", "inference")
     }
     emitted_by_query: set[str] = set()
+    paired_gene_index = _index_paired_genes(base)
     stats: dict[str, Any] = {
         **validation,
         "rows": len(table.hits),
@@ -615,9 +623,18 @@ def plan_eggnog_additions(
         "confidence_contract_source": table.confidence_contract_source,
     }
 
+    evidence.extend(
+        {
+            "entry_type": "eggnog_row",
+            "row_number": hit.row_number,
+            "query_id": hit.query_id,
+            "raw_fields": dict(hit.raw_fields),
+        }
+        for hit in table.hits
+    )
     for hit in table.hits:
         feature = cds[hit.query_id]
-        paired = _paired_gene(base, feature)
+        paired = _paired_gene(paired_gene_index, feature)
         for partial in hit.ec_partial:
             evidence.append(
                 {
@@ -638,7 +655,6 @@ def plan_eggnog_additions(
                     "seed_ortholog": hit.seed_ortholog,
                     "e_value": hit.evalue,
                     "score": hit.score,
-                    "raw_fields": dict(hit.raw_fields),
                 }
             )
         candidates: list[tuple[str, str, str, int | None]] = []
@@ -764,7 +780,6 @@ def plan_eggnog_additions(
                     "seed_ortholog": hit.seed_ortholog,
                     "e_value": hit.evalue,
                     "score": hit.score,
-                    "raw_fields": dict(hit.raw_fields),
                 }
             )
         if hit.query_id in emitted_by_query and add_feature_provenance:
@@ -872,7 +887,9 @@ def merge(
     )
     validate_genbank_semantics(base_data, "Bakta input")
     base = parse_genbank_bytes(base_data, "Bakta input")
-    table = parse_eggnog_path(eggnog_path, expected_version=eggnog_version)
+    table = parse_eggnog_path(
+        eggnog_path, expected_version=eggnog_version, data=eggnog_data
+    )
     insertions, evidence, stats = plan_eggnog_additions(
         base,
         parse_faa(faa_data),

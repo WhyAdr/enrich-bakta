@@ -21,6 +21,7 @@ from merge_engine import (
     protein_sha256,
     qualifier_insertion,
     sha256_bytes,
+    validate_faa_gbff,
     validate_genbank_semantics,
 )
 
@@ -53,6 +54,18 @@ def plan_translation_restoration(
             )
         )
     restored: list[str] = []
+    translated_queries = [
+        query_id
+        for query_id in sorted(requested)
+        if any(value.strip() for value in cds[query_id].values("translation"))
+    ]
+    if translated_queries:
+        validate_faa_gbff(
+            base,
+            proteins,
+            translated_queries,
+            source_name="eggNOG translation restoration",
+        )
     for query_id in sorted(requested):
         feature = cds[query_id]
         translations = [
@@ -129,6 +142,7 @@ def restore(
         metadata={
             "operation": "pseudogene-translation-restoration",
             "faa_sha256": stats["faa_sha256"],
+            "eggnog_sha256": stats["eggnog_sha256"],
             "eggnog_version": table.version or "",
             "restored_translation_count": stats["restored_translation_count"],
         },
@@ -154,12 +168,16 @@ def prepare_restoration(
     """Validate restoration inputs and return a no-write insertion plan."""
     base_data = bakta_path.read_bytes()
     faa_data = faa_path.read_bytes()
+    eggnog_data = eggnog_path.read_bytes()
     validate_genbank_semantics(base_data, "Bakta input")
-    table = parse_eggnog_path(eggnog_path, expected_version=eggnog_version)
+    table = parse_eggnog_path(
+        eggnog_path, expected_version=eggnog_version, data=eggnog_data
+    )
     base = parse_genbank_bytes(base_data, "Bakta input")
     insertions, evidence_rows, stats = plan_translation_restoration(
         base, parse_faa(faa_data), table, faa_data=faa_data
     )
+    stats["eggnog_sha256"] = sha256_bytes(eggnog_data)
     return base, base_data, faa_data, table, insertions, evidence_rows, stats
 
 

@@ -23,6 +23,7 @@ from merge_engine import (
     parse_faa,
     parse_genbank_bytes,
     qualifier_insertion,
+    reconcile_insertions,
     sha256_bytes,
     validate_genbank_semantics,
 )
@@ -151,6 +152,7 @@ def plan_kofam_additions(
     faa_data: bytes,
     kofamscan_version: str | None,
     add_comment_note: bool,
+    add_feature_provenance: bool = True,
     merge_timestamp: str | None,
     starting_order: int = 0,
 ) -> tuple[list[Insertion], list[dict[str, Any]], dict[str, Any]]:
@@ -219,7 +221,11 @@ def plan_kofam_additions(
             emitted.append(f'/note="{note}"')
 
         inference_values = planned[(feature.start, "inference")]
-        if hit.query_id not in inferred_queries and inference not in inference_values:
+        if (
+            add_feature_provenance
+            and hit.query_id not in inferred_queries
+            and inference not in inference_values
+        ):
             insertions.append(
                 qualifier_insertion(
                     base.data,
@@ -287,6 +293,7 @@ def plan_kofam_additions(
         "kofam_sha256": kofam_hash,
         "faa_sha256": faa_hash,
         "kofamscan_version": kofamscan_version or "",
+        "feature_provenance": add_feature_provenance,
         "planned_insertions": len(insertions),
     }
     return insertions, evidence_rows, stats
@@ -341,10 +348,13 @@ def merge(
         faa_data=faa_data,
         kofamscan_version=kofamscan_version,
         add_comment_note=add_comment_note,
+        add_feature_provenance=add_feature_provenance,
         merge_timestamp=merge_timestamp,
         starting_order=next_order,
     )
     insertions.extend(kofam_insertions)
+    insertions, reconciliation_rows, reconciliation = reconcile_insertions(insertions)
+    evidence_rows.extend(reconciliation_rows)
     combined_stats["kofam"] = kofam_stats
     final = finalize_merge(
         base_path=bakta_path,
@@ -362,6 +372,10 @@ def merge(
             "baktfold_sha256": (
                 combined_stats.get("baktfold", {}).get("baktfold_sha256", "")
             ),
+            "baktfold_version": (
+                combined_stats.get("baktfold", {}).get("baktfold_version", "")
+            ),
+            **reconciliation,
             "merge_timestamp": merge_timestamp or "",
         },
     )

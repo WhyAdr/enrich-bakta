@@ -20,6 +20,7 @@ from typing import Any
 from Bio import BiopythonParserWarning, SeqIO
 
 QUALIFIER_INDENT = b" " * 21
+TOOL_VERSION = "0.2.0"
 _FEATURE_RE = re.compile(rb"^ {5}(\S+)\s+(.+)$")
 _QUALIFIER_RE = re.compile(rb"^ {21}/([^=\s]+)(?:=(.*))?$")
 _LOCUS_LENGTH_RE = re.compile(rb"^LOCUS\s+\S+\s+(\d+)\s+bp\b")
@@ -961,6 +962,7 @@ def finalize_merge(
     parsed_output = parse_genbank_bytes(merged, "merged output")
     metadata = {
         **metadata,
+        "tool_version": TOOL_VERSION,
         "base_sha256": sha256_bytes(base_data),
         "output_sha256": sha256_bytes(merged),
         "insertions": len(applied),
