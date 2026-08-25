@@ -529,6 +529,59 @@ def test_eggnog_rejects_bad_fields_and_version() -> None:
         parse_eggnog_tsv(eggnog_bytes(valid), expected_version="4")
 
 
+def test_partial_ec_is_manifested_but_not_promoted(tmp_path: Path) -> None:
+    base = write(tmp_path / "base.gbff", record_bytes("TEST", "T_0001"))
+    faa = write(tmp_path / "base.faa", b">T_0001\nMK\n")
+    eggnog = write(
+        tmp_path / "annotations.tsv",
+        eggnog_bytes(
+            "T_0001\tseed\t1e-4\t10\t-\t-\t-\tec:1.2.3.4,ec:1.2.3.-"
+            "\t-\t-\thhhhhhhhhhhhh"
+        ),
+    )
+    output = tmp_path / "out.gbff"
+    manifest = tmp_path / "manifest.json"
+    stats = merge_eggnog(
+        base, faa, eggnog, output, manifest_path=manifest, add_comment_note=False
+    )
+    assert '/EC_number="1.2.3.4"' in output.read_text()
+    assert "1.2.3.-" not in output.read_text()
+    assert stats["eggnog"]["partial_ec_skipped"] == 1
+    entries = json.loads(manifest.read_text())["entries"]
+    partial = next(row for row in entries if row.get("status") == "skipped_partial_ec")
+    assert partial["normalized_value"] == "1.2.3.-"
+    malformed = eggnog_bytes(
+        "T_0001\tseed\t1e-4\t10\t-\t-\t-\t1.2.-.4\t-\t-\thhhhhhhhhhhhh"
+    )
+    with pytest.raises(MergeError, match="invalid EC"):
+        parse_eggnog_tsv(malformed)
+
+
+def test_confidence_legend_is_validated_and_recorded() -> None:
+    row = "T_0001\tseed\t1e-4\t10\t-\t-\t-\t-\t-\t-\thhhhhhhhhhhhh"
+    legend = (
+        "## confidence field order: Preferred_name GOs EC KEGG_ko KEGG_Pathway "
+        "KEGG_Module KEGG_Reaction KEGG_rclass BRITE KEGG_TC CAZy "
+        "BiGG_Reaction PFAMs\n"
+    )
+    table = parse_eggnog_tsv(
+        eggnog_bytes(row).replace(b"#query", legend.encode() + b"#query")
+    )
+    assert table.confidence_contract_source == "header_legend"
+    assert table.confidence_field_order[2] == "EC"
+    bad = legend.replace("Preferred_name GOs", "GOs Preferred_name")
+    with pytest.raises(MergeError, match="confidence field order"):
+        parse_eggnog_tsv(eggnog_bytes(row).replace(b"#query", bad.encode() + b"#query"))
+
+
+def test_reserved_query_markers_are_rejected() -> None:
+    row = "#weird\tseed\t1e-4\t10\t-\t-\t-\t-\t-\t-\thhhhhhhhhhhhh"
+    with pytest.raises(MergeError, match="reserved '#'"):
+        parse_eggnog_tsv(eggnog_bytes(row))
+    with pytest.raises(MergeError, match="reserved marker"):
+        parse_kofam_table(kofam_bytes("**weird K00001 1 2 3e-4 protein"))
+
+
 def test_eggnog_xlsx_requires_explicit_version_before_optional_import(
     tmp_path: Path,
 ) -> None:

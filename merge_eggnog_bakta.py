@@ -29,29 +29,34 @@ from merge_engine import (
 
 GO_RE = re.compile(r"GO:\d{7}\Z")
 EC_RE = re.compile(r"\d+\.\d+\.\d+\.\d+\Z")
+EC_PARTIAL_RE = re.compile(r"(?:\d+\.\d+\.\d+\.-|\d+\.\d+\.-\.-|\d+\.-\.-\.-)\Z")
 KO_RE = re.compile(r"K\d{5}\Z")
 COG_RE = re.compile(r"COG\d{4}\Z")
 CAZY_RE = re.compile(r"(?:GH|GT|PL|CE|AA|CBM)\d+(?:_\d+)?\Z")
-QUERY_RE = re.compile(r"\S+\Z")
+QUERY_RE = re.compile(r"(?![#*])\S+\Z")
 ANNOTATION_TOKEN_RE = re.compile(r"[^\s,]+\Z")
 VERSION_RE = re.compile(r"^##\s*emapper-([^\s]+)")
 CONFIDENCE_RANK = {"low": 0, "medium": 1, "high": 2}
 CONFIDENCE_CODE_RANK = {"l": 0, "m": 1, "h": 2}
+CONFIDENCE_SCORED_FIELDS = (
+    "Preferred_name",
+    "GOs",
+    "EC",
+    "KEGG_ko",
+    "KEGG_Pathway",
+    "KEGG_Module",
+    "KEGG_Reaction",
+    "KEGG_rclass",
+    "BRITE",
+    "KEGG_TC",
+    "CAZy",
+    "BiGG_Reaction",
+    "PFAMs",
+)
 CONFIDENCE_FIELD_INDEX = {
-    "Preferred_name": 0,
-    "GOs": 1,
-    "EC": 2,
-    "KEGG_ko": 3,
-    "KEGG_Pathway": 4,
-    "KEGG_Module": 5,
-    "KEGG_Reaction": 6,
-    "KEGG_rclass": 7,
-    "BRITE": 8,
-    "KEGG_TC": 9,
-    "CAZy": 10,
-    "BiGG_Reaction": 11,
-    "PFAMs": 12,
+    field: index for index, field in enumerate(CONFIDENCE_SCORED_FIELDS)
 }
+CONFIDENCE_ORDER_PREFIX = "## confidence field order:"
 REQUIRED_COLUMNS = (
     "#query",
     "seed_ortholog",
@@ -104,6 +109,7 @@ class EggnogHit:
     preferred_name: str
     gos: tuple[str, ...]
     ec: tuple[str, ...]
+    ec_partial: tuple[str, ...]
     kegg_ko: tuple[str, ...]
     cazy: tuple[str, ...]
     pfams: tuple[str, ...]
@@ -121,6 +127,8 @@ class EggnogTable:
     columns: tuple[str, ...]
     version: str | None
     format: str
+    confidence_field_order: tuple[str, ...]
+    confidence_contract_source: str
 
 
 def _decimal(value: str, field: str, row_number: int) -> Decimal:
@@ -168,6 +176,26 @@ def _parse_cazy(value: str, row_number: int) -> tuple[str, ...]:
     return tuple(result)
 
 
+def _parse_ec(value: str, row_number: int) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    if value.strip() in MISSING_ANNOTATION_VALUES:
+        return (), ()
+    full: list[str] = []
+    partial: list[str] = []
+    for raw in value.split(","):
+        token = raw.strip()
+        if token.lower().startswith("ec:"):
+            token = token[3:]
+        if EC_RE.fullmatch(token):
+            if token not in full:
+                full.append(token)
+        elif EC_PARTIAL_RE.fullmatch(token):
+            if token not in partial:
+                partial.append(token)
+        else:
+            raise MergeError(f"eggNOG row {row_number}: invalid EC value {raw!r}")
+    return tuple(full), tuple(partial)
+
+
 def _validate_confidence(value: str, row_number: int) -> str:
     if len(value) != 13 or any(char not in {"l", "m", "h", "-"} for char in value):
         raise MergeError(
@@ -198,6 +226,7 @@ def _build_hit(values: dict[str, str], row_number: int) -> EggnogHit:
         COG_RE.fullmatch(cog) or re.fullmatch(r"[A-Z]+", cog)
     ):
         raise MergeError(f"eggNOG row {row_number}: invalid COG_category {cog!r}")
+    ec, ec_partial = _parse_ec(values["EC"].strip(), row_number)
     return EggnogHit(
         row_number=row_number,
         query_id=query_id,
@@ -209,13 +238,8 @@ def _build_hit(values: dict[str, str], row_number: int) -> EggnogHit:
         gos=_tokens(
             values["GOs"].strip(), field="GO", row_number=row_number, pattern=GO_RE
         ),
-        ec=_tokens(
-            values["EC"].strip(),
-            field="EC",
-            row_number=row_number,
-            pattern=EC_RE,
-            prefix="ec:",
-        ),
+        ec=ec,
+        ec_partial=ec_partial,
         kegg_ko=_tokens(
             values["KEGG_ko"].strip(),
             field="KEGG_ko",
@@ -249,6 +273,7 @@ def parse_eggnog_tsv(
     except UnicodeDecodeError as exc:
         raise MergeError(f"eggNOG TSV is not UTF-8 at byte {exc.start}") from exc
     version: str | None = None
+    declared_confidence_order: tuple[str, ...] | None = None
     columns: list[str] | None = None
     hits: list[EggnogHit] = []
     query_ids: set[str] = set()
@@ -259,6 +284,13 @@ def parse_eggnog_tsv(
             match = VERSION_RE.match(line)
             if match:
                 version = match.group(1)
+            if line.lower().startswith(CONFIDENCE_ORDER_PREFIX):
+                order = tuple(line[len(CONFIDENCE_ORDER_PREFIX) :].strip().split())
+                if declared_confidence_order is not None:
+                    raise MergeError(
+                        "eggNOG TSV contains duplicate confidence field-order legends"
+                    )
+                declared_confidence_order = order
             continue
         if line.startswith("#"):
             candidate = line.split("\t")
@@ -268,6 +300,11 @@ def parse_eggnog_tsv(
                 if len(candidate) != len(set(candidate)):
                     raise MergeError("eggNOG TSV header contains duplicate columns")
                 columns = candidate
+            elif columns is not None and "\t" in line:
+                raise MergeError(
+                    f"eggNOG row {row_number}: data row begins with reserved '#'; "
+                    "query IDs must not start with '#'"
+                )
             continue
         if columns is None:
             raise MergeError(
@@ -289,11 +326,34 @@ def parse_eggnog_tsv(
         raise MergeError("eggNOG TSV is missing the #query header")
     if not hits:
         raise MergeError("eggNOG TSV contains no annotation rows")
+    confidence_order = declared_confidence_order or CONFIDENCE_SCORED_FIELDS
+    if confidence_order != CONFIDENCE_SCORED_FIELDS:
+        raise MergeError(
+            "eggNOG confidence field order does not match the supported contract: "
+            f"{confidence_order!r}"
+        )
+    header_order = tuple(
+        column for column in columns if column in CONFIDENCE_FIELD_INDEX
+    )
+    expected_header_order = tuple(
+        column for column in CONFIDENCE_SCORED_FIELDS if column in header_order
+    )
+    if header_order != expected_header_order:
+        raise MergeError(
+            "eggNOG scored columns conflict with the confidence field-order contract"
+        )
     if expected_version is not None and version != expected_version:
         raise MergeError(
             f"eggNOG version mismatch: declared={version!r}, requested={expected_version!r}"
         )
-    return EggnogTable(tuple(hits), tuple(columns), version, "tsv")
+    return EggnogTable(
+        tuple(hits),
+        tuple(columns),
+        version,
+        "tsv",
+        confidence_order,
+        "header_legend" if declared_confidence_order else "documented_default",
+    )
 
 
 def parse_eggnog_xlsx(
@@ -348,7 +408,24 @@ def parse_eggnog_xlsx(
         hits.append(hit)
     if not hits:
         raise MergeError("eggNOG XLSX contains no annotation rows")
-    return EggnogTable(tuple(hits), tuple(columns), expected_version, "xlsx")
+    header_order = tuple(
+        column for column in columns if column in CONFIDENCE_FIELD_INDEX
+    )
+    expected_header_order = tuple(
+        column for column in CONFIDENCE_SCORED_FIELDS if column in header_order
+    )
+    if header_order != expected_header_order:
+        raise MergeError(
+            "eggNOG scored columns conflict with the confidence field-order contract"
+        )
+    return EggnogTable(
+        tuple(hits),
+        tuple(columns),
+        expected_version,
+        "xlsx",
+        CONFIDENCE_SCORED_FIELDS,
+        "documented_default",
+    )
 
 
 def parse_eggnog_path(
@@ -533,11 +610,37 @@ def plan_eggnog_additions(
         "confidence_filtered": 0,
         "candidate_values": 0,
         "emitted_values": 0,
+        "partial_ec_skipped": sum(len(hit.ec_partial) for hit in table.hits),
+        "confidence_field_order": list(table.confidence_field_order),
+        "confidence_contract_source": table.confidence_contract_source,
     }
 
     for hit in table.hits:
         feature = cds[hit.query_id]
         paired = _paired_gene(base, feature)
+        for partial in hit.ec_partial:
+            evidence.append(
+                {
+                    "entry_type": "eggnog_candidate",
+                    "evidence_class": "direct_annotation",
+                    "row_number": hit.row_number,
+                    "query_id": hit.query_id,
+                    "record": feature.record_id,
+                    "feature_type": feature.feature_type,
+                    "locus_tag": feature.locus_tag or "",
+                    "field": "EC",
+                    "raw_value": hit.raw("EC"),
+                    "source_token": partial,
+                    "normalized_value": partial,
+                    "confidence_code": hit.confidence[CONFIDENCE_FIELD_INDEX["EC"]],
+                    "status": "skipped_partial_ec",
+                    "emitted_qualifiers": "",
+                    "seed_ortholog": hit.seed_ortholog,
+                    "e_value": hit.evalue,
+                    "score": hit.score,
+                    "raw_fields": dict(hit.raw_fields),
+                }
+            )
         candidates: list[tuple[str, str, str, int | None]] = []
         if hit.preferred_name not in {"", "-"}:
             candidates.append(
@@ -733,6 +836,8 @@ def plan_eggnog_additions(
                     "context_hits": len(context_entries),
                     "context_values": context_value_count,
                     "fields": list(HIGHER_ORDER_FIELDS),
+                    "confidence_field_order": list(table.confidence_field_order),
+                    "confidence_contract_source": table.confidence_contract_source,
                     "note": (
                         "Higher-order eggNOG context is reported separately from "
                         "feature-level qualifiers."
@@ -798,6 +903,8 @@ def merge(
             "faa_sha256": stats["faa_sha256"],
             "eggnog_version": stats["eggnog_version"],
             "min_eggnog_confidence": min_confidence,
+            "confidence_field_order": stats["confidence_field_order"],
+            "confidence_contract_source": stats["confidence_contract_source"],
             "merge_timestamp": merge_timestamp or "",
         },
     )

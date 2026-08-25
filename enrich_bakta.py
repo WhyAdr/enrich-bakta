@@ -125,6 +125,8 @@ def enrich(
                 "eggnog_sha256": stats["eggnog_sha256"],
                 "eggnog_version": stats["eggnog_version"],
                 "min_eggnog_confidence": min_eggnog_confidence,
+                "confidence_field_order": stats["confidence_field_order"],
+                "confidence_contract_source": stats["confidence_contract_source"],
             }
         )
         other_inputs.append(eggnog_path)

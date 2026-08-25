@@ -92,6 +92,10 @@ def parse_kofam_table(data: bytes) -> list[KofamHit]:
                 f"Kofam row {row_number}: expected 6 hit fields, found {len(fields)}"
             )
         query_id, ko, threshold, score, e_value, definition = fields
+        if query_id.startswith(("*", "#")):
+            raise MergeError(
+                f"Kofam row {row_number}: query ID {query_id!r} starts with a reserved marker"
+            )
         if not KO_RE.fullmatch(ko):
             raise MergeError(f"Kofam row {row_number}: invalid KO identifier {ko!r}")
         _decimal(threshold, "threshold", row_number)
