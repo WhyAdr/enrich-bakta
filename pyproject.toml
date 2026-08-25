@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "enrich-bakta"
+version = "0.2.0"
+description = "Byte-preserving enrichment of Bakta GenBank annotations"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["biopython>=1.83,<2"]
+
+[project.optional-dependencies]
+xlsx = ["openpyxl>=3.1,<4"]
+dev = [
+  "mypy>=1.10,<2",
+  "pytest>=8,<10",
+  "ruff>=0.14,<1",
+]
+
+[project.scripts]
+enrich-bakta = "enrich_bakta:main"
+enrich-bakta-baktfold = "graft_baktfold_additions:main"
+enrich-bakta-kofam = "merge_kofamscan_bakta:main"
+enrich-bakta-eggnog = "merge_eggnog_bakta:main"
+enrich-bakta-restore-translations = "restore_bakta_translations:main"
+
+[tool.setuptools]
+py-modules = [
+  "enrich_bakta",
+  "graft_baktfold_additions",
+  "merge_eggnog_bakta",
+  "merge_engine",
+  "merge_kofamscan_bakta",
+  "restore_bakta_translations",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+extend-exclude = ["*.md", "normalize_baktfold.py"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.mypy]
+ignore_missing_imports = true
+files = [
+  "enrich_bakta.py",
+  "graft_baktfold_additions.py",
+  "merge_eggnog_bakta.py",
+  "merge_engine.py",
+  "merge_kofamscan_bakta.py",
+  "restore_bakta_translations.py",
+]

@@ -532,7 +532,14 @@ def validate_faa_gbff(
 
 
 def protein_sha256(sequence: str) -> str:
-    return sha256_bytes(normalize_protein(sequence).encode("ascii"))
+    normalized = normalize_protein(sequence)
+    try:
+        encoded = normalized.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise MergeError(
+            f"protein sequence contains non-ASCII characters: {normalized[:32]!r}"
+        ) from exc
+    return sha256_bytes(encoded)
 
 
 def newline_for_offset(data: bytes, offset: int) -> bytes:

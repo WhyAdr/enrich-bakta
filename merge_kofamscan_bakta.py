@@ -14,6 +14,7 @@ from typing import Any
 
 from graft_baktfold_additions import plan_baktfold_additions
 from merge_engine import (
+    TOOL_VERSION,
     Insertion,
     MergeError,
     RawDocument,
@@ -375,6 +376,11 @@ def merge(
             "baktfold_version": (
                 combined_stats.get("baktfold", {}).get("baktfold_version", "")
             ),
+            "baktfold_version_detected": (
+                combined_stats.get("baktfold", {}).get(
+                    "baktfold_version_detected", False
+                )
+            ),
             **reconciliation,
             "merge_timestamp": merge_timestamp or "",
         },
@@ -385,6 +391,9 @@ def merge(
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Merge validated KofamScan hits onto Bakta GBFF, optionally with Baktfold in one pass."
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {TOOL_VERSION}"
     )
     parser.add_argument("bakta", type=Path)
     parser.add_argument("faa", type=Path)

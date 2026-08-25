@@ -11,6 +11,7 @@ from typing import Any
 
 from merge_eggnog_bakta import EggnogTable, parse_eggnog_path
 from merge_engine import (
+    TOOL_VERSION,
     Insertion,
     MergeError,
     RawDocument,
@@ -185,15 +186,20 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Restore only translationless eggNOG-referenced pseudogene CDSs from a matched Bakta FAA."
     )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {TOOL_VERSION}"
+    )
     parser.add_argument("bakta", type=Path)
     parser.add_argument("faa", type=Path)
     parser.add_argument("eggnog", type=Path)
-    parser.add_argument("output", type=Path)
+    parser.add_argument("output", type=Path, nargs="?")
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--eggnog-version")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
+    if not args.dry_run and args.output is None:
+        parser.error("output is required unless --dry-run is used")
     for label, path in (
         ("Bakta", args.bakta),
         ("FAA", args.faa),
@@ -210,6 +216,7 @@ def main() -> int:
                 eggnog_version=args.eggnog_version,
             )
         else:
+            assert args.output is not None
             stats = restore(
                 args.bakta,
                 args.faa,

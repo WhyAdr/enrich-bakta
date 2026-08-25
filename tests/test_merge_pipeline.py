@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from Bio import SeqIO
@@ -18,12 +20,14 @@ from merge_engine import (
     finalize_merge,
     format_qualifier,
     parse_genbank_bytes,
+    protein_sha256,
     qualifier_insertion,
     reconcile_insertions,
     strict_parity_check,
     validate_genbank_semantics,
 )
 from merge_kofamscan_bakta import merge, parse_kofam_table
+from restore_bakta_translations import main as restore_main
 from restore_bakta_translations import restore
 
 
@@ -347,6 +351,8 @@ def test_parser_numeric_validation_and_insertion_allowlist() -> None:
     forbidden = Insertion(0, b"x", "R", "CDS", "T", "product", "x", "test", "x")
     with pytest.raises(MergeError, match="allowlist rejected"):
         apply_insertions(b"base", [forbidden])
+    with pytest.raises(MergeError, match="non-ASCII"):
+        protein_sha256("MÉ")
 
 
 def test_quoted_formatter_wraps_and_biopython_parses() -> None:
@@ -480,6 +486,7 @@ def test_eggnog_pfam_og_notes_manifest_and_context_sidecar(
     assert stats["eggnog"]["pfam_candidates"] == 2
     assert stats["eggnog"]["eggnog_og_candidates"] == 1
     assert stats["eggnog"]["context_hits"] == 1
+    assert "_context_report" not in stats["eggnog"]
 
     manifest_entries = json.loads(manifest.read_text())["entries"]
     pfam_rows = [row for row in manifest_entries if row.get("field") == "PFAMs"]
@@ -619,6 +626,25 @@ def test_eggnog_xlsx_requires_explicit_version_before_optional_import(
         parse_eggnog_path(tmp_path / "annotations.xlsx")
 
 
+def test_eggnog_xlsx_rejects_an_empty_header(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cells = [SimpleNamespace(value="#query"), SimpleNamespace(value=None)]
+    worksheet = SimpleNamespace(iter_rows=lambda: iter([cells]))
+
+    class Workbook:
+        sheetnames = ["annotations"]
+
+        def __getitem__(self, key: str):
+            assert key == "annotations"
+            return worksheet
+
+    fake_openpyxl = SimpleNamespace(load_workbook=lambda *_args, **_kwargs: Workbook())
+    monkeypatch.setitem(sys.modules, "openpyxl", fake_openpyxl)
+    with pytest.raises(MergeError, match="empty column names"):
+        parse_eggnog_path(tmp_path / "annotations.xlsx", expected_version="3.0.0-beta6")
+
+
 def test_eggnog_confidence_and_existing_values_are_not_reinserted(
     tmp_path: Path,
 ) -> None:
@@ -718,6 +744,7 @@ def test_unified_merge_reconciles_eggnog_and_kofam(tmp_path: Path) -> None:
         eggnog_path=eggnog,
         manifest_path=manifest,
         context_report_path=context,
+        clean_gene_suffix=True,
         add_comment_note=False,
     )
     assert output.read_text().count('/db_xref="KEGG:K00001"') == 1
@@ -732,6 +759,8 @@ def test_unified_merge_reconciles_eggnog_and_kofam(tmp_path: Path) -> None:
     assert metadata["kofam_sha256"]
     assert metadata["eggnog_sha256"]
     assert metadata["tool_version"] == "0.2.0"
+    assert metadata["clean_gene_suffix"] is True
+    assert metadata["baktfold_version_detected"] is True
     entries = payload["entries"]
     assert any(row.get("status") == "exact_duplicate_collapsed" for row in entries)
 
@@ -768,3 +797,31 @@ def test_translation_restoration_validates_existing_translations(
     with pytest.raises(MergeError, match="sequence_mismatches"):
         restore(base, faa, eggnog, output)
     assert not output.exists()
+
+
+def test_translation_restoration_dry_run_does_not_require_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    base_data = record_bytes("TEST", "T_0001").replace(
+        b'                     /translation="MK"\n',
+        b'                     /pseudogene="unitary"\n',
+    )
+    base = write(tmp_path / "base.gbff", base_data)
+    faa = write(tmp_path / "base.faa", b">T_0001\nMK\n")
+    eggnog = write(
+        tmp_path / "annotations.tsv",
+        eggnog_bytes("T_0001\tseed\t1e-4\t10\t-\t-\t-\t-\t-\t-\thhhhhhhhhhhhh"),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "restore_bakta_translations.py",
+            str(base),
+            str(faa),
+            str(eggnog),
+            "--dry-run",
+        ],
+    )
+    assert restore_main() == 0
+    assert "no output written" in capsys.readouterr().out

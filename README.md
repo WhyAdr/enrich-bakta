@@ -20,11 +20,13 @@ the output. Biopython also parses every input and generated GenBank file.
 | `merge_eggnog_bakta.py` | Validates eggNOG-mapper TSV (or optional XLSX) rows and exact FAA/GBFF protein identity, then adds supported annotations, PFAM/ortholog notes, and optional context reporting. |
 | `enrich_bakta.py` | Canonical one-pass multi-source CLI that reconciles Baktfold, KofamScan, and eggNOG additions before byte splicing. |
 | `restore_bakta_translations.py` | Creates a separate FAA-backed GBFF copy with `/translation` restored only for eggNOG-referenced translationless pseudogene CDSs. |
-| `normalize_baktfold.py` | Legacy Baktfold-output normalization utility; it is not used by the byte-preserving merge path. |
+| `normalize_baktfold.py` | Historical normalization utility. It is excluded from the supported package, lint gate, and byte-preserving path; do not use it for new workflows. |
 | `tests/` | Synthetic parity, preservation, qualifier, KO, failure, CRLF, and idempotence tests. |
 
-Python 3.10 or later and Biopython are required. Pytest and Ruff are used for
-development validation.
+Python 3.10 or later and Biopython 1.83 or later are required. Install the
+supported commands with `python -m pip install .`; use `.[xlsx]` for XLSX input
+or `.[dev,xlsx]` for the development environment. Every CLI supports
+`--version`, and every manifest records the enrich-bakta version.
 
 ## Baktfold graft
 
@@ -67,6 +69,10 @@ The GBFF receives:
 1. `/db_xref="KEGG:Kxxxxx"` when that gene-KO pair is new;
 2. one compact score/threshold/E-value `/note` per hit; and
 3. one `/inference="profile:KofamScan[:VERSION]"` per hit CDS.
+
+`--no-feature-provenance` suppresses the Kofam `/inference` qualifier. It does
+not suppress the compact score/threshold/E-value `/note`, because that note is
+the feature-level evidence supporting the KO rather than producer metadata.
 
 KO definition text remains in the manifest. `[EC:...]` text is not promoted to
 `/EC_number`, and Kofam evidence never replaces product, gene, translation,
@@ -120,11 +126,19 @@ no confidence position. Confidence thresholds are `low` (default), `medium`,
 and `high`; COG category letters are not reinterpreted as COG IDs and COG has no
 confidence position.
 
+For v3 TSVs, the parser validates the declared 13-field confidence-order legend
+when present and records whether the order came from that legend or the
+documented v3 default. Syntactically valid partial EC assignments such as
+`1.2.3.-` remain in the manifest with `skipped_partial_ec` status but are not
+promoted to `/EC_number`; malformed EC text still fails the run.
+
 Preferred names are added only to a blank, location-matched `gene`/CDS pair.
 `--clean-gene-suffix` removes one terminal `_digits` during planning but preserves
 the raw value in the manifest. The manifest also retains hashes, version, row,
 score, E-value, raw/normalized values, confidence, and emission/suppression
-status. Feature provenance identifies the seed ortholog as
+status. Each raw eggNOG input row is stored once as an `eggnog_row` entry;
+candidate and context entries reference it by row number. Feature provenance
+identifies the seed ortholog as
 `DESCRIPTION:similar to AA sequence:eggNOG:SEED_ORTHOLOG`.
 
 When `--context-report PATH` is supplied, higher-order fields such as KEGG
@@ -143,7 +157,7 @@ matched Bakta FAA to create a separate restored GBFF copy:
 ```bash
 # Validate the exact restoration plan; this writes nothing.
 python restore_bakta_translations.py \
-  BAKTA.gbff BAKTA.faa query.emapper.annotations RESTORED.gbff \
+  BAKTA.gbff BAKTA.faa query.emapper.annotations \
   --eggnog-version 3.0.0-beta6 --dry-run
 
 # Write the restored copy and its manifest, leaving BAKTA.gbff unchanged.
@@ -156,12 +170,13 @@ python merge_eggnog_bakta.py \
   --eggnog-version 3.0.0-beta6 --manifest ENRICHED.manifest.json
 ```
 
-The restoration script refuses any query absent from the FAA or GBFF, any
-translationless CDS not marked `/pseudogene`, and any feature that already has a
-translation. It inserts only the matched FAA sequence and records the locus and
-protein hash in the restoration manifest. This is an explicit annotation-repair
-policy: retain both the original and restored GBFFs, and do not describe the
-restored sequence as newly demonstrated biology.
+The restoration script refuses any query absent from the FAA or GBFF and any
+translationless CDS not marked `/pseudogene`. Requested CDSs that already have a
+translation must still match the FAA exactly; they are validated but not
+modified. The script inserts only the matched FAA sequence and records the locus
+and protein hash in the restoration manifest. This is an explicit
+annotation-repair policy: retain both the original and restored GBFFs, and do
+not describe the restored sequence as newly demonstrated biology.
 
 ## Unified multi-source enrichment
 
@@ -179,6 +194,8 @@ eggNOG. Exact qualifier/value overlaps are emitted once with source support in
 the reconciliation manifest. Different EC/KO values coexist. Different
 Baktfold/eggNOG gene symbols at a blank locus are skipped by default; select
 `--gene-conflict-policy prefer-eggnog` or `prefer-baktfold` to choose explicitly.
+The unified CLI also accepts `--clean-gene-suffix`, with the same raw-value
+preservation policy as the eggNOG-only CLI.
 The original single-source commands remain available.
 
 These xrefs follow the project's enrichment convention. Formal submission needs
@@ -191,8 +208,12 @@ or phenotype.
 
 ```bash
 python -m pytest -q
-ruff check merge_engine.py graft_baktfold_additions.py \
-  merge_kofamscan_bakta.py merge_eggnog_bakta.py enrich_bakta.py tests
-ruff format --check merge_engine.py graft_baktfold_additions.py \
-  merge_kofamscan_bakta.py merge_eggnog_bakta.py enrich_bakta.py tests
+python -m ruff check .
+python -m ruff format --check .
+python -m mypy
+git diff --check
 ```
+
+The same gate runs in CI on Python 3.10 and 3.12. The historical
+`normalize_baktfold.py` utility is intentionally excluded; supported enrichment
+and restoration code plus tests are included.

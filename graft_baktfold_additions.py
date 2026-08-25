@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from merge_engine import (
+    TOOL_VERSION,
     Insertion,
     MergeError,
     RawDocument,
@@ -91,6 +92,7 @@ def plan_baktfold_additions(
         "ec_by_type": collections.Counter(),
         "xref_by_type": collections.Counter(),
         "baktfold_version": version,
+        "baktfold_version_detected": version != "unknown",
         "baktfold_sha256": source_hash,
         "parity": parity,
     }
@@ -260,6 +262,7 @@ def graft(
             "operation": "baktfold-graft",
             "baktfold_sha256": stats["baktfold_sha256"],
             "baktfold_version": stats["baktfold_version"],
+            "baktfold_version_detected": stats["baktfold_version_detected"],
             "gene_added": stats["gene_added"],
             "ec_added": stats["ec_added"],
             "xref_added": stats["xref_added"],
@@ -279,6 +282,9 @@ def _serializable_stats(stats: dict[str, Any]) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Graft strictly validated Baktfold additions onto pristine Bakta GBFF bytes."
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {TOOL_VERSION}"
     )
     parser.add_argument("bakta", type=Path, help="authoritative Bakta .gbff")
     parser.add_argument("baktfold", type=Path, help="matching Baktfold .gbff")

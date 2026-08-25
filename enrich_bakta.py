@@ -12,6 +12,7 @@ from typing import Any
 from graft_baktfold_additions import plan_baktfold_additions
 from merge_eggnog_bakta import parse_eggnog_path, plan_eggnog_additions
 from merge_engine import (
+    TOOL_VERSION,
     MergeError,
     finalize_merge,
     parse_faa,
@@ -40,6 +41,7 @@ def enrich(
     add_feature_provenance: bool = True,
     merge_timestamp: str | None = None,
     context_report_path: Path | None = None,
+    clean_gene_suffix: bool = False,
 ) -> dict[str, Any]:
     if not any((baktfold_path, kofamscan_path, eggnog_path)):
         raise MergeError("at least one evidence source is required")
@@ -82,6 +84,7 @@ def enrich(
         insertions.extend(planned)
         metadata["baktfold_sha256"] = stats["baktfold_sha256"]
         metadata["baktfold_version"] = stats["baktfold_version"]
+        metadata["baktfold_version_detected"] = stats["baktfold_version_detected"]
         other_inputs.append(baktfold_path)
     if kofamscan_path:
         data = kofamscan_path.read_bytes()
@@ -114,13 +117,14 @@ def enrich(
         table = parse_eggnog_path(
             eggnog_path, expected_version=eggnog_version, data=data
         )
-        planned, rows, stats = plan_eggnog_additions(
+        plan = plan_eggnog_additions(
             base,
             proteins or {},
             table,
             eggnog_data=data,
             faa_data=faa_data,
             min_confidence=min_eggnog_confidence,
+            clean_gene_suffix=clean_gene_suffix,
             add_comment_note=add_comment_note,
             add_feature_provenance=add_feature_provenance,
             merge_timestamp=merge_timestamp,
@@ -129,7 +133,10 @@ def enrich(
             )
             + 1,
         )
-        context_report = stats.pop("_context_report")
+        planned = plan.insertions
+        rows = plan.evidence_rows
+        stats = plan.stats
+        context_report = plan.context_report
         context_report["metadata"]["operation"] = "unified-enrichment"
         insertions.extend(planned)
         evidence_rows.extend(rows)
@@ -140,6 +147,7 @@ def enrich(
                 "min_eggnog_confidence": min_eggnog_confidence,
                 "confidence_field_order": stats["confidence_field_order"],
                 "confidence_contract_source": stats["confidence_contract_source"],
+                "clean_gene_suffix": clean_gene_suffix,
             }
         )
         other_inputs.append(eggnog_path)
@@ -166,6 +174,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Reconcile Baktfold, KofamScan, and eggNOG evidence in one byte-safe Bakta merge."
     )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {TOOL_VERSION}"
+    )
     parser.add_argument("--bakta", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--faa", type=Path)
@@ -177,6 +188,7 @@ def main() -> int:
     parser.add_argument(
         "--min-eggnog-confidence", choices=("low", "medium", "high"), default="low"
     )
+    parser.add_argument("--clean-gene-suffix", action="store_true")
     parser.add_argument(
         "--gene-conflict-policy",
         choices=("skip", "prefer-eggnog", "prefer-baktfold"),
@@ -213,6 +225,7 @@ def main() -> int:
             eggnog_path=args.eggnog,
             eggnog_version=args.eggnog_version,
             min_eggnog_confidence=args.min_eggnog_confidence,
+            clean_gene_suffix=args.clean_gene_suffix,
             gene_conflict_policy=args.gene_conflict_policy,
             manifest_path=args.manifest,
             add_comment_note=not args.no_comment_note,

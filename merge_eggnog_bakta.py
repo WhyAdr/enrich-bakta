@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from merge_engine import (
+    TOOL_VERSION,
     Insertion,
     MergeError,
     RawDocument,
@@ -129,6 +130,14 @@ class EggnogTable:
     format: str
     confidence_field_order: tuple[str, ...]
     confidence_contract_source: str
+
+
+@dataclass(frozen=True)
+class EggnogPlan:
+    insertions: list[Insertion]
+    evidence_rows: list[dict[str, Any]]
+    stats: dict[str, Any]
+    context_report: dict[str, Any]
 
 
 def _decimal(value: str, field: str, row_number: int) -> Decimal:
@@ -385,6 +394,8 @@ def parse_eggnog_xlsx(
     ]
     if len(columns) != len(set(columns)):
         raise MergeError("eggNOG XLSX header contains duplicate columns")
+    if any(not column.strip() for column in columns):
+        raise MergeError("eggNOG XLSX header contains empty column names")
     hits: list[EggnogHit] = []
     query_ids: set[str] = set()
     for row_number, cells in enumerate(rows, start=2):
@@ -594,7 +605,7 @@ def plan_eggnog_additions(
     add_feature_provenance: bool = True,
     merge_timestamp: str | None = None,
     starting_order: int = 0,
-) -> tuple[list[Insertion], list[dict[str, Any]], dict[str, Any]]:
+) -> EggnogPlan:
     if min_confidence not in CONFIDENCE_RANK:
         raise MergeError(f"invalid eggNOG confidence threshold {min_confidence!r}")
     cds, validation = validate_faa_gbff(
@@ -809,7 +820,7 @@ def plan_eggnog_additions(
     if add_comment_note:
         lines = [
             f"Source eggNOG-mapper {table.version or 'unspecified'}; table sha256={eggnog_hash[:16]}",
-            f"FAA sha256={faa_hash[:16]}; rows={len(table.hits)}, mapped CDSs={len(cds)}.",
+            f"FAA sha256={faa_hash[:16]}; rows={len(table.hits)}, mapped CDSs={len(table.hits)}.",
             "eggNOG assignments are genomic evidence, not proof of activity or phenotype.",
         ]
         if merge_timestamp:
@@ -830,39 +841,40 @@ def plan_eggnog_additions(
         {
             "eggnog_sha256": eggnog_hash,
             "faa_sha256": faa_hash,
-            "hit_cds": len(emitted_by_query),
+            "hit_cds": len(table.hits),
+            "emitting_cds": len(emitted_by_query),
             "pfam_candidates": sum(len(hit.pfams) for hit in table.hits),
             "eggnog_og_candidates": sum(len(hit.eggnog_ogs) for hit in table.hits),
             "context_hits": len(context_entries),
             "context_manifest_rows": len(context_rows),
             "context_values": context_value_count,
             "planned_insertions": len(insertions),
-            "_context_report": {
-                "schema": "enrich-bakta.eggnog-context.v1",
-                "metadata": {
-                    "operation": "eggnog-context-report",
-                    "eggnog_version": table.version or "",
-                    "eggnog_sha256": eggnog_hash,
-                    "faa_sha256": faa_hash,
-                    "min_eggnog_confidence": min_confidence,
-                    "format": table.format,
-                    "columns": list(table.columns),
-                    "rows": len(table.hits),
-                    "context_hits": len(context_entries),
-                    "context_values": context_value_count,
-                    "fields": list(HIGHER_ORDER_FIELDS),
-                    "confidence_field_order": list(table.confidence_field_order),
-                    "confidence_contract_source": table.confidence_contract_source,
-                    "note": (
-                        "Higher-order eggNOG context is reported separately from "
-                        "feature-level qualifiers."
-                    ),
-                },
-                "entries": context_entries,
-            },
         }
     )
-    return insertions, evidence, stats
+    context_report = {
+        "schema": "enrich-bakta.eggnog-context.v1",
+        "metadata": {
+            "operation": "eggnog-context-report",
+            "eggnog_version": table.version or "",
+            "eggnog_sha256": eggnog_hash,
+            "faa_sha256": faa_hash,
+            "min_eggnog_confidence": min_confidence,
+            "format": table.format,
+            "columns": list(table.columns),
+            "rows": len(table.hits),
+            "context_hits": len(context_entries),
+            "context_values": context_value_count,
+            "fields": list(HIGHER_ORDER_FIELDS),
+            "confidence_field_order": list(table.confidence_field_order),
+            "confidence_contract_source": table.confidence_contract_source,
+            "note": (
+                "Higher-order eggNOG context is reported separately from "
+                "feature-level qualifiers."
+            ),
+        },
+        "entries": context_entries,
+    }
+    return EggnogPlan(insertions, evidence, stats, context_report)
 
 
 def merge(
@@ -890,7 +902,7 @@ def merge(
     table = parse_eggnog_path(
         eggnog_path, expected_version=eggnog_version, data=eggnog_data
     )
-    insertions, evidence, stats = plan_eggnog_additions(
+    plan = plan_eggnog_additions(
         base,
         parse_faa(faa_data),
         table,
@@ -902,7 +914,10 @@ def merge(
         add_feature_provenance=add_feature_provenance,
         merge_timestamp=merge_timestamp,
     )
-    context_report = stats.pop("_context_report")
+    insertions = plan.insertions
+    evidence = plan.evidence_rows
+    stats = plan.stats
+    context_report = plan.context_report
     context_report["metadata"]["operation"] = "eggnog-merge"
     final = finalize_merge(
         base_path=bakta_path,
@@ -931,6 +946,9 @@ def merge(
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Merge sequence-validated eggNOG-mapper evidence onto a Bakta GBFF."
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {TOOL_VERSION}"
     )
     parser.add_argument("bakta", type=Path)
     parser.add_argument("faa", type=Path)
