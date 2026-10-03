@@ -1,0 +1,2056 @@
+{
+  "schema": "enrich-bakta.dataset-manifest.v1",
+  "artifacts": [
+    {
+      "id": "artifact-data-bk71a-derived-restored-bk71a-restored-gbff",
+      "path": "data/BK71A/derived/restored/BK71A-restored.gbff",
+      "sample": "BK71A",
+      "role": "derived_output",
+      "size_bytes": 11260518,
+      "sha256": "e21ca2bebc022183af1e3c44cf30e2d29ec5fc551b606a60cd660fe16cd8c8b9",
+      "lineage": [],
+      "producer": {
+        "database": "not-applicable",
+        "name": "enrich-bakta",
+        "version": "0.2.0"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-bakta-c14-nmz-embl",
+      "path": "data/C14/bakta/C14-NMZ.embl",
+      "sample": "C14",
+      "role": "upstream_input",
+      "size_bytes": 13821035,
+      "sha256": "e58e29cbff117c6e37a41dca4875d1f5aa2609c3d8cddb72d7c670d1264506c8",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-bakta-c14-nmz-faa",
+      "path": "data/C14/bakta/C14-NMZ.faa",
+      "sample": "C14",
+      "role": "upstream_input",
+      "size_bytes": 1712328,
+      "sha256": "955a8af2a91fd2411774ee1c1c4a8bb178c1f733d37aa8a5f6ac35b358e2b09f",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-bakta-c14-nmz-ffn",
+      "path": "data/C14/bakta/C14-NMZ.ffn",
+      "sample": "C14",
+      "role": "upstream_input",
+      "size_bytes": 4735792,
+      "sha256": "09379999d769ce4de77fa5f47d0282adbea877b1aceb846b77d5b31552518ae5",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-bakta-c14-nmz-fna",
+      "path": "data/C14/bakta/C14-NMZ.fna",
+      "sample": "C14",
+      "role": "upstream_input",
+      "size_bytes": 5134867,
+      "sha256": "849125f9995cf0cb9b42ff1db70acad150f4eadfce3f9d16418fba2623f2228b",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-bakta-c14-nmz-gbff",
+      "path": "data/C14/bakta/C14-NMZ.gbff",
+      "sample": "C14",
+      "role": "upstream_input",
+      "size_bytes": 13400323,
+      "sha256": "8fbb0f56ffd91fa18dacc0c6d67bc9b2e4efede04f476238786d2db9fba6feab",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-bakta-c14-nmz-gff3",
+      "path": "data/C14/bakta/C14-NMZ.gff3",
+      "sample": "C14",
+      "role": "upstream_input",
+      "size_bytes": 2495871,
+      "sha256": "db64878de9dc8005240946288f28c2bf1532ad10d9b10a51a61c03ee15d7d3cc",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-bakta-c14-nmz-hypotheticals-faa",
+      "path": "data/C14/bakta/C14-NMZ.hypotheticals.faa",
+      "sample": "C14",
+      "role": "upstream_input",
+      "size_bytes": 15514,
+      "sha256": "d21fada239e0f8cd5b38eb81f35d6f3a5d80c459ccfa636f86449376415e15fe",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-bakta-c14-nmz-hypotheticals-tsv",
+      "path": "data/C14/bakta/C14-NMZ.hypotheticals.tsv",
+      "sample": "C14",
+      "role": "upstream_input",
+      "size_bytes": 16637,
+      "sha256": "04ccfb91f35c213ba2d9daaf22528828a4a07cc9b157b7823fc9844bd9964e75",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-bakta-c14-nmz-inference-tsv",
+      "path": "data/C14/bakta/C14-NMZ.inference.tsv",
+      "sample": "C14",
+      "role": "upstream_input",
+      "size_bytes": 444153,
+      "sha256": "a995b3552318e9ee9ff9b20f7714c7df3d691f35323757b0434258c72ed1bccf",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-bakta-c14-nmz-json",
+      "path": "data/C14/bakta/C14-NMZ.json",
+      "sample": "C14",
+      "role": "upstream_input",
+      "size_bytes": 21247096,
+      "sha256": "e7f37b9913caa37948c345047dbef2b7e69e01097e995c402dab6c1b911f354e",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-bakta-c14-nmz-log",
+      "path": "data/C14/bakta/C14-NMZ.log",
+      "sample": "C14",
+      "role": "upstream_input",
+      "size_bytes": 1676518,
+      "sha256": "f29aef2dae9af7b55ff96c17ab2b97dbd1a91067adb0d2e9c863dee59826f1fc",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-bakta-c14-nmz-png",
+      "path": "data/C14/bakta/C14-NMZ.png",
+      "sample": "C14",
+      "role": "upstream_input",
+      "size_bytes": 1489540,
+      "sha256": "600adec717991babd6871bb103c53bc6f2f26bd686dc00b155feb1ca7e09dac0",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-bakta-c14-nmz-svg",
+      "path": "data/C14/bakta/C14-NMZ.svg",
+      "sample": "C14",
+      "role": "upstream_input",
+      "size_bytes": 2411068,
+      "sha256": "20048cdf6662cbee5143103d245705d129f1a2215955b47bc721bda91aeaf487",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-bakta-c14-nmz-tsv",
+      "path": "data/C14/bakta/C14-NMZ.tsv",
+      "sample": "C14",
+      "role": "upstream_input",
+      "size_bytes": 1215939,
+      "sha256": "6fdfd33c5ca857920ada256f9c5e6bd9a6f8548313e9afd555b916e332e230b2",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-bakta-c14-nmz-txt",
+      "path": "data/C14/bakta/C14-NMZ.txt",
+      "sample": "C14",
+      "role": "upstream_input",
+      "size_bytes": 394,
+      "sha256": "beb1333a883f06bf55cd79b67759188bf32f2e5200c0953d629a8445b856accf",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-baktfold-c14-nmz-embl",
+      "path": "data/C14/baktfold/C14_NMZ.embl",
+      "sample": "C14",
+      "role": "annotation_source",
+      "size_bytes": 14018656,
+      "sha256": "ffa6b9c4b6038976f18e7a5456fddc33fa51f974c981a6ca5cc9985817e17c50",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Baktfold",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-baktfold-c14-nmz-faa",
+      "path": "data/C14/baktfold/C14_NMZ.faa",
+      "sample": "C14",
+      "role": "annotation_source",
+      "size_bytes": 1712489,
+      "sha256": "8ef31dedb34609e4c41738b87ee75f61a5018e693834a19461d6f32ef454145b",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Baktfold",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-baktfold-c14-nmz-ffn",
+      "path": "data/C14/baktfold/C14_NMZ.ffn",
+      "sample": "C14",
+      "role": "annotation_source",
+      "size_bytes": 4735953,
+      "sha256": "9a2367edbf2d78d14ce7062a949a6ec31aab886f4055f43491cdb934e652e9cc",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Baktfold",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-baktfold-c14-nmz-fna",
+      "path": "data/C14/baktfold/C14_NMZ.fna",
+      "sample": "C14",
+      "role": "annotation_source",
+      "size_bytes": 5134867,
+      "sha256": "849125f9995cf0cb9b42ff1db70acad150f4eadfce3f9d16418fba2623f2228b",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Baktfold",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-baktfold-c14-nmz-gbff",
+      "path": "data/C14/baktfold/C14_NMZ.gbff",
+      "sample": "C14",
+      "role": "annotation_source",
+      "size_bytes": 13597937,
+      "sha256": "a2b1d90554291f7d78b4a57179191a17d0652181cfa0ffd0bce05dd9c8b88210",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Baktfold",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-baktfold-c14-nmz-gff3",
+      "path": "data/C14/baktfold/C14_NMZ.gff3",
+      "sample": "C14",
+      "role": "annotation_source",
+      "size_bytes": 6801062,
+      "sha256": "2844746c5c0e9a96cef0cff145ae7f65b495adeecec1b3f749f9eec683c2674c",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Baktfold",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-baktfold-c14-nmz-hypotheticals-faa",
+      "path": "data/C14/baktfold/C14_NMZ.hypotheticals.faa",
+      "sample": "C14",
+      "role": "annotation_source",
+      "size_bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Baktfold",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-baktfold-c14-nmz-hypotheticals-tsv",
+      "path": "data/C14/baktfold/C14_NMZ.hypotheticals.tsv",
+      "sample": "C14",
+      "role": "annotation_source",
+      "size_bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Baktfold",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-baktfold-c14-nmz-inference-tsv",
+      "path": "data/C14/baktfold/C14_NMZ.inference.tsv",
+      "sample": "C14",
+      "role": "annotation_source",
+      "size_bytes": 5619,
+      "sha256": "8d5df41796e0bf82c29b951518d3d9c42ac9d67070d6521b8f0ed94514fda7e5",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Baktfold",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-baktfold-c14-nmz-json",
+      "path": "data/C14/baktfold/C14_NMZ.json",
+      "sample": "C14",
+      "role": "annotation_source",
+      "size_bytes": 21290276,
+      "sha256": "f2f1b9ea512ae27a38f244abad72dd04f77e6c7076e5f6a6a717f9fb56c2defd",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Baktfold",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-baktfold-c14-nmz-tsv",
+      "path": "data/C14/baktfold/C14_NMZ.tsv",
+      "sample": "C14",
+      "role": "annotation_source",
+      "size_bytes": 1217722,
+      "sha256": "4ae99732b8143e085f35412bffd9cb73c36926cbcac3612abc111d7990374ef0",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Baktfold",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-derived-enriched-c14-nmz-eggnog-enriched-gbff",
+      "path": "data/C14/derived/enriched/C14-NMZ-eggnog-enriched.gbff",
+      "sample": "C14",
+      "role": "derived_output",
+      "size_bytes": 15260217,
+      "sha256": "3a6c4cebcfb497a9f0c0b754ae677effa292e8af909a4249a1abea675f3affd7",
+      "lineage": [
+        "artifact-data-c14-bakta-c14-nmz-embl",
+        "artifact-data-c14-bakta-c14-nmz-faa",
+        "artifact-data-c14-bakta-c14-nmz-ffn",
+        "artifact-data-c14-bakta-c14-nmz-fna",
+        "artifact-data-c14-bakta-c14-nmz-gbff",
+        "artifact-data-c14-bakta-c14-nmz-gff3",
+        "artifact-data-c14-bakta-c14-nmz-hypotheticals-faa",
+        "artifact-data-c14-bakta-c14-nmz-hypotheticals-tsv",
+        "artifact-data-c14-bakta-c14-nmz-inference-tsv",
+        "artifact-data-c14-bakta-c14-nmz-json",
+        "artifact-data-c14-bakta-c14-nmz-log",
+        "artifact-data-c14-bakta-c14-nmz-png",
+        "artifact-data-c14-bakta-c14-nmz-svg",
+        "artifact-data-c14-bakta-c14-nmz-tsv",
+        "artifact-data-c14-bakta-c14-nmz-txt",
+        "artifact-data-c14-baktfold-c14-nmz-embl",
+        "artifact-data-c14-baktfold-c14-nmz-faa",
+        "artifact-data-c14-baktfold-c14-nmz-ffn",
+        "artifact-data-c14-baktfold-c14-nmz-fna",
+        "artifact-data-c14-baktfold-c14-nmz-gbff",
+        "artifact-data-c14-baktfold-c14-nmz-gff3",
+        "artifact-data-c14-baktfold-c14-nmz-hypotheticals-faa",
+        "artifact-data-c14-baktfold-c14-nmz-hypotheticals-tsv",
+        "artifact-data-c14-baktfold-c14-nmz-inference-tsv",
+        "artifact-data-c14-baktfold-c14-nmz-json",
+        "artifact-data-c14-baktfold-c14-nmz-tsv",
+        "artifact-data-c14-evidence-c14-kofamkoala-txt",
+        "artifact-data-c14-evidence-c14-nmz-emapper-annotations-xlsx",
+        "artifact-data-c14-evidence-c14-nmz-query-emapper-annotations",
+        "artifact-data-c14-evidence-c14-nmz-query-emapper-hits",
+        "artifact-data-c14-evidence-c14-nmz-query-emapper-seed-orthologs",
+        "artifact-data-c14-evidence-c14-nmz-query-emapper-seed-orthologs-sorted",
+        "artifact-data-c14-evidence-c14-nmz-timing-json",
+        "artifact-data-c14-evidence-c14-result-ko-for-kegg-mapper-txt"
+      ],
+      "producer": {
+        "database": "not-applicable",
+        "name": "enrich-bakta",
+        "version": "0.3.0"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-derived-enriched-c14-nmz-eggnog-enriched-manifest-json",
+      "path": "data/C14/derived/enriched/C14-NMZ-eggnog-enriched.manifest.json",
+      "sample": "C14",
+      "role": "derived_output",
+      "size_bytes": 97887354,
+      "sha256": "aa5c7a5288614105d938f7ae4c0428749e794117893bcfd73f00f2c9a388ee16",
+      "lineage": [
+        "artifact-data-c14-bakta-c14-nmz-embl",
+        "artifact-data-c14-bakta-c14-nmz-faa",
+        "artifact-data-c14-bakta-c14-nmz-ffn",
+        "artifact-data-c14-bakta-c14-nmz-fna",
+        "artifact-data-c14-bakta-c14-nmz-gbff",
+        "artifact-data-c14-bakta-c14-nmz-gff3",
+        "artifact-data-c14-bakta-c14-nmz-hypotheticals-faa",
+        "artifact-data-c14-bakta-c14-nmz-hypotheticals-tsv",
+        "artifact-data-c14-bakta-c14-nmz-inference-tsv",
+        "artifact-data-c14-bakta-c14-nmz-json",
+        "artifact-data-c14-bakta-c14-nmz-log",
+        "artifact-data-c14-bakta-c14-nmz-png",
+        "artifact-data-c14-bakta-c14-nmz-svg",
+        "artifact-data-c14-bakta-c14-nmz-tsv",
+        "artifact-data-c14-bakta-c14-nmz-txt",
+        "artifact-data-c14-baktfold-c14-nmz-embl",
+        "artifact-data-c14-baktfold-c14-nmz-faa",
+        "artifact-data-c14-baktfold-c14-nmz-ffn",
+        "artifact-data-c14-baktfold-c14-nmz-fna",
+        "artifact-data-c14-baktfold-c14-nmz-gbff",
+        "artifact-data-c14-baktfold-c14-nmz-gff3",
+        "artifact-data-c14-baktfold-c14-nmz-hypotheticals-faa",
+        "artifact-data-c14-baktfold-c14-nmz-hypotheticals-tsv",
+        "artifact-data-c14-baktfold-c14-nmz-inference-tsv",
+        "artifact-data-c14-baktfold-c14-nmz-json",
+        "artifact-data-c14-baktfold-c14-nmz-tsv",
+        "artifact-data-c14-evidence-c14-kofamkoala-txt",
+        "artifact-data-c14-evidence-c14-nmz-emapper-annotations-xlsx",
+        "artifact-data-c14-evidence-c14-nmz-query-emapper-annotations",
+        "artifact-data-c14-evidence-c14-nmz-query-emapper-hits",
+        "artifact-data-c14-evidence-c14-nmz-query-emapper-seed-orthologs",
+        "artifact-data-c14-evidence-c14-nmz-query-emapper-seed-orthologs-sorted",
+        "artifact-data-c14-evidence-c14-nmz-timing-json",
+        "artifact-data-c14-evidence-c14-result-ko-for-kegg-mapper-txt"
+      ],
+      "producer": {
+        "database": "not-applicable",
+        "name": "enrich-bakta",
+        "version": "0.3.0"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-derived-restored-c14-nmz-eggnog-restored-gbff",
+      "path": "data/C14/derived/restored/C14-NMZ-eggnog-restored.gbff",
+      "sample": "C14",
+      "role": "derived_output",
+      "size_bytes": 13401339,
+      "sha256": "5b8c78b99998ae661a6f21a8d7d0163e536554920b558c273c207f84a6281e69",
+      "lineage": [
+        "artifact-data-c14-bakta-c14-nmz-embl",
+        "artifact-data-c14-bakta-c14-nmz-faa",
+        "artifact-data-c14-bakta-c14-nmz-ffn",
+        "artifact-data-c14-bakta-c14-nmz-fna",
+        "artifact-data-c14-bakta-c14-nmz-gbff",
+        "artifact-data-c14-bakta-c14-nmz-gff3",
+        "artifact-data-c14-bakta-c14-nmz-hypotheticals-faa",
+        "artifact-data-c14-bakta-c14-nmz-hypotheticals-tsv",
+        "artifact-data-c14-bakta-c14-nmz-inference-tsv",
+        "artifact-data-c14-bakta-c14-nmz-json",
+        "artifact-data-c14-bakta-c14-nmz-log",
+        "artifact-data-c14-bakta-c14-nmz-png",
+        "artifact-data-c14-bakta-c14-nmz-svg",
+        "artifact-data-c14-bakta-c14-nmz-tsv",
+        "artifact-data-c14-bakta-c14-nmz-txt",
+        "artifact-data-c14-baktfold-c14-nmz-embl",
+        "artifact-data-c14-baktfold-c14-nmz-faa",
+        "artifact-data-c14-baktfold-c14-nmz-ffn",
+        "artifact-data-c14-baktfold-c14-nmz-fna",
+        "artifact-data-c14-baktfold-c14-nmz-gbff",
+        "artifact-data-c14-baktfold-c14-nmz-gff3",
+        "artifact-data-c14-baktfold-c14-nmz-hypotheticals-faa",
+        "artifact-data-c14-baktfold-c14-nmz-hypotheticals-tsv",
+        "artifact-data-c14-baktfold-c14-nmz-inference-tsv",
+        "artifact-data-c14-baktfold-c14-nmz-json",
+        "artifact-data-c14-baktfold-c14-nmz-tsv",
+        "artifact-data-c14-evidence-c14-kofamkoala-txt",
+        "artifact-data-c14-evidence-c14-nmz-emapper-annotations-xlsx",
+        "artifact-data-c14-evidence-c14-nmz-query-emapper-annotations",
+        "artifact-data-c14-evidence-c14-nmz-query-emapper-hits",
+        "artifact-data-c14-evidence-c14-nmz-query-emapper-seed-orthologs",
+        "artifact-data-c14-evidence-c14-nmz-query-emapper-seed-orthologs-sorted",
+        "artifact-data-c14-evidence-c14-nmz-timing-json",
+        "artifact-data-c14-evidence-c14-result-ko-for-kegg-mapper-txt"
+      ],
+      "producer": {
+        "database": "not-applicable",
+        "name": "enrich-bakta",
+        "version": "0.3.0"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-derived-restored-c14-nmz-eggnog-restored-manifest-json",
+      "path": "data/C14/derived/restored/C14-NMZ-eggnog-restored.manifest.json",
+      "sample": "C14",
+      "role": "derived_output",
+      "size_bytes": 13005,
+      "sha256": "854d193ddc2e0139306607405da357ddbff23a4afa8e24834568fc400a492f96",
+      "lineage": [
+        "artifact-data-c14-bakta-c14-nmz-embl",
+        "artifact-data-c14-bakta-c14-nmz-faa",
+        "artifact-data-c14-bakta-c14-nmz-ffn",
+        "artifact-data-c14-bakta-c14-nmz-fna",
+        "artifact-data-c14-bakta-c14-nmz-gbff",
+        "artifact-data-c14-bakta-c14-nmz-gff3",
+        "artifact-data-c14-bakta-c14-nmz-hypotheticals-faa",
+        "artifact-data-c14-bakta-c14-nmz-hypotheticals-tsv",
+        "artifact-data-c14-bakta-c14-nmz-inference-tsv",
+        "artifact-data-c14-bakta-c14-nmz-json",
+        "artifact-data-c14-bakta-c14-nmz-log",
+        "artifact-data-c14-bakta-c14-nmz-png",
+        "artifact-data-c14-bakta-c14-nmz-svg",
+        "artifact-data-c14-bakta-c14-nmz-tsv",
+        "artifact-data-c14-bakta-c14-nmz-txt",
+        "artifact-data-c14-baktfold-c14-nmz-embl",
+        "artifact-data-c14-baktfold-c14-nmz-faa",
+        "artifact-data-c14-baktfold-c14-nmz-ffn",
+        "artifact-data-c14-baktfold-c14-nmz-fna",
+        "artifact-data-c14-baktfold-c14-nmz-gbff",
+        "artifact-data-c14-baktfold-c14-nmz-gff3",
+        "artifact-data-c14-baktfold-c14-nmz-hypotheticals-faa",
+        "artifact-data-c14-baktfold-c14-nmz-hypotheticals-tsv",
+        "artifact-data-c14-baktfold-c14-nmz-inference-tsv",
+        "artifact-data-c14-baktfold-c14-nmz-json",
+        "artifact-data-c14-baktfold-c14-nmz-tsv",
+        "artifact-data-c14-evidence-c14-kofamkoala-txt",
+        "artifact-data-c14-evidence-c14-nmz-emapper-annotations-xlsx",
+        "artifact-data-c14-evidence-c14-nmz-query-emapper-annotations",
+        "artifact-data-c14-evidence-c14-nmz-query-emapper-hits",
+        "artifact-data-c14-evidence-c14-nmz-query-emapper-seed-orthologs",
+        "artifact-data-c14-evidence-c14-nmz-query-emapper-seed-orthologs-sorted",
+        "artifact-data-c14-evidence-c14-nmz-timing-json",
+        "artifact-data-c14-evidence-c14-result-ko-for-kegg-mapper-txt"
+      ],
+      "producer": {
+        "database": "not-applicable",
+        "name": "enrich-bakta",
+        "version": "0.3.0"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-evidence-c14-kofamkoala-txt",
+      "path": "data/C14/evidence/C14-KofamKOALA.txt",
+      "sample": "C14",
+      "role": "functional_evidence",
+      "size_bytes": 344129,
+      "sha256": "6a081d87fe96682081a3d63a185781f9cd185d5fd6584861b9fe1bfab2981342",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "KofamScan",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-evidence-c14-nmz-emapper-annotations-xlsx",
+      "path": "data/C14/evidence/C14-NMZ-emapper_annotations.xlsx",
+      "sample": "C14",
+      "role": "functional_evidence",
+      "size_bytes": 758684,
+      "sha256": "5ba3a01354d9be617224eacfb5541e8fb35ecf0266139952b880955f927d524d",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "eggNOG-mapper",
+        "version": "3.0.0-beta6"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-evidence-c14-nmz-query-emapper-annotations",
+      "path": "data/C14/evidence/C14-NMZ-query.emapper.annotations",
+      "sample": "C14",
+      "role": "functional_evidence",
+      "size_bytes": 1281682,
+      "sha256": "ef1b713b307b2f2a14947edc6808d70cf0021b0e8b66e7ab235ce3ddbc957987",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "eggNOG-mapper",
+        "version": "3.0.0-beta6"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-evidence-c14-nmz-query-emapper-hits",
+      "path": "data/C14/evidence/C14-NMZ-query.emapper.hits",
+      "sample": "C14",
+      "role": "functional_evidence",
+      "size_bytes": 400407,
+      "sha256": "16d6efb8ed83bd3f240b0b5f790a5bbe311b55ff1a0ee60fb544862c669ce73a",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "eggNOG-mapper",
+        "version": "3.0.0-beta6"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-evidence-c14-nmz-query-emapper-seed-orthologs",
+      "path": "data/C14/evidence/C14-NMZ-query.emapper.seed_orthologs",
+      "sample": "C14",
+      "role": "functional_evidence",
+      "size_bytes": 306565,
+      "sha256": "11c08aa4adddb28fab72b9ef999bca7c71344efcc582c9aef5c1fa11e377bcac",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "eggNOG-mapper",
+        "version": "3.0.0-beta6"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-evidence-c14-nmz-query-emapper-seed-orthologs-sorted",
+      "path": "data/C14/evidence/C14-NMZ-query.emapper.seed_orthologs.sorted",
+      "sample": "C14",
+      "role": "functional_evidence",
+      "size_bytes": 305761,
+      "sha256": "40b477bee2c94be7085534bce1f68ffb130d412cb351783e927d78f0398b8dcd",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "eggNOG-mapper",
+        "version": "3.0.0-beta6"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-evidence-c14-nmz-timing-json",
+      "path": "data/C14/evidence/C14-NMZ-timing.json",
+      "sample": "C14",
+      "role": "functional_evidence",
+      "size_bytes": 176,
+      "sha256": "0c224c23339142b87832856f65ec1a74eebf113a6f04cd4a355b477feb00397f",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "analysis-run",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-evidence-c14-result-ko-for-kegg-mapper-txt",
+      "path": "data/C14/evidence/C14-result_ko-for-kegg-mapper.txt",
+      "sample": "C14",
+      "role": "functional_evidence",
+      "size_bytes": 91707,
+      "sha256": "380305ae3cc45bcb6d1927a034bdc2d9125136641211c25c98ff3f321fc2a082",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "KEGG Mapper",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-bakta-sm-nmz-embl",
+      "path": "data/SM/bakta/SM-NMZ.embl",
+      "sample": "SM",
+      "role": "upstream_input",
+      "size_bytes": 13549692,
+      "sha256": "127fd803982b89f1d0d5f5b964434264abb2fb78aef7e4017cc168eec5243cc8",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-bakta-sm-nmz-faa",
+      "path": "data/SM/bakta/SM-NMZ.faa",
+      "sample": "SM",
+      "role": "upstream_input",
+      "size_bytes": 1679823,
+      "sha256": "a6de8205c333014263fabe05aff97d99c2355986ee6712cb5563b3332173d317",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-bakta-sm-nmz-ffn",
+      "path": "data/SM/bakta/SM-NMZ.ffn",
+      "sample": "SM",
+      "role": "upstream_input",
+      "size_bytes": 4645630,
+      "sha256": "7b5ae621112bb70bb89be190f98bff52363f5997c7a2fb14ab82c8b9aef2ea52",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-bakta-sm-nmz-fna",
+      "path": "data/SM/bakta/SM-NMZ.fna",
+      "sample": "SM",
+      "role": "upstream_input",
+      "size_bytes": 5057270,
+      "sha256": "8f07aca81a5e7849bf33f002e51067616caefd4b8db62cc482599bd69ba6156b",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-bakta-sm-nmz-gbff",
+      "path": "data/SM/bakta/SM-NMZ.gbff",
+      "sample": "SM",
+      "role": "upstream_input",
+      "size_bytes": 13135523,
+      "sha256": "27b2c31b17a9a4b838c98a10c8165a6cd6e4f91859df72e75364f189478bef2d",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-bakta-sm-nmz-gff3",
+      "path": "data/SM/bakta/SM-NMZ.gff3",
+      "sample": "SM",
+      "role": "upstream_input",
+      "size_bytes": 2429924,
+      "sha256": "4ed50d435815d7fa40d8168c9a35028d5976c241a09c27643ffb5d975ffe70ee",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-bakta-sm-nmz-hypotheticals-faa",
+      "path": "data/SM/bakta/SM-NMZ.hypotheticals.faa",
+      "sample": "SM",
+      "role": "upstream_input",
+      "size_bytes": 23620,
+      "sha256": "1e046ed052f9b54679d71a42ff22d84df7fc5ab59522b4be943932bdf1cc6517",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-bakta-sm-nmz-hypotheticals-tsv",
+      "path": "data/SM/bakta/SM-NMZ.hypotheticals.tsv",
+      "sample": "SM",
+      "role": "upstream_input",
+      "size_bytes": 19978,
+      "sha256": "7ac074c90cb856eca0f61ee38ddeb555577288db58a0c167296d288161aa0cc0",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-bakta-sm-nmz-inference-tsv",
+      "path": "data/SM/bakta/SM-NMZ.inference.tsv",
+      "sample": "SM",
+      "role": "upstream_input",
+      "size_bytes": 440187,
+      "sha256": "85d59af2a0a285886742d1cc8db4d2731bc985d9feb0a74dec54ae98cdd2af38",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-bakta-sm-nmz-json",
+      "path": "data/SM/bakta/SM-NMZ.json",
+      "sample": "SM",
+      "role": "upstream_input",
+      "size_bytes": 20727624,
+      "sha256": "b7b87e5d17189fdd951794367db6cb0a3f23d16afdc0d79af9fe62ed70e682b5",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-bakta-sm-nmz-log",
+      "path": "data/SM/bakta/SM-NMZ.log",
+      "sample": "SM",
+      "role": "upstream_input",
+      "size_bytes": 1667510,
+      "sha256": "6e0ecdc84d0584823c639622dae00d39b67d0a4c59d814269d3d5d91f74c4390",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-bakta-sm-nmz-png",
+      "path": "data/SM/bakta/SM-NMZ.png",
+      "sample": "SM",
+      "role": "upstream_input",
+      "size_bytes": 1494712,
+      "sha256": "ea29171d2bd0c88babf2f80d89ab2f040d5c88a643d5bf568a88724140d30fcc",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-bakta-sm-nmz-svg",
+      "path": "data/SM/bakta/SM-NMZ.svg",
+      "sample": "SM",
+      "role": "upstream_input",
+      "size_bytes": 2895757,
+      "sha256": "b5f546647eaac053135b791f342cca025a226e6f6fff9a140a089537abbd13f5",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-bakta-sm-nmz-tsv",
+      "path": "data/SM/bakta/SM-NMZ.tsv",
+      "sample": "SM",
+      "role": "upstream_input",
+      "size_bytes": 1163811,
+      "sha256": "e7420de48664aa2a1df1efec268a2cb5f8e645f8b62f2b2ad5113ce9cb0e4ab6",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-bakta-sm-nmz-txt",
+      "path": "data/SM/bakta/SM-NMZ.txt",
+      "sample": "SM",
+      "role": "upstream_input",
+      "size_bytes": 394,
+      "sha256": "cbc3fdd2272c8a16443b0e6dc5ccec2e0ff03a9a9045d17dece1c3b20635e9f6",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Bakta",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-baktfold-sm-nmz-embl",
+      "path": "data/SM/baktfold/SM_NMZ.embl",
+      "sample": "SM",
+      "role": "annotation_source",
+      "size_bytes": 13742522,
+      "sha256": "2b50d832c027f3ad5624934c46c0a4a952e1e32e5a15964835a132f9d5ba1760",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Baktfold",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-baktfold-sm-nmz-faa",
+      "path": "data/SM/baktfold/SM_NMZ.faa",
+      "sample": "SM",
+      "role": "annotation_source",
+      "size_bytes": 1680177,
+      "sha256": "11e9ae1e54d892f6502364ec95ba0bb5dcdde5056708c50a1340c91af4a88e5c",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Baktfold",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-baktfold-sm-nmz-ffn",
+      "path": "data/SM/baktfold/SM_NMZ.ffn",
+      "sample": "SM",
+      "role": "annotation_source",
+      "size_bytes": 4645984,
+      "sha256": "1d9230b7fc3c6e2625cf2cc9e51c85c1155f0dc883233745985111cee5d361b8",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Baktfold",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-baktfold-sm-nmz-fna",
+      "path": "data/SM/baktfold/SM_NMZ.fna",
+      "sample": "SM",
+      "role": "annotation_source",
+      "size_bytes": 5057270,
+      "sha256": "8f07aca81a5e7849bf33f002e51067616caefd4b8db62cc482599bd69ba6156b",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Baktfold",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-baktfold-sm-nmz-gbff",
+      "path": "data/SM/baktfold/SM_NMZ.gbff",
+      "sample": "SM",
+      "role": "annotation_source",
+      "size_bytes": 13328339,
+      "sha256": "cc0606ad10f6a03ad7c5235e07da40a6590f0de2913f0271c3ef04e11bffa99e",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Baktfold",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-baktfold-sm-nmz-gff3",
+      "path": "data/SM/baktfold/SM_NMZ.gff3",
+      "sample": "SM",
+      "role": "annotation_source",
+      "size_bytes": 6668889,
+      "sha256": "642463bf775c09d9415f67369b3ccd869e473ac1677751320bd1ec4de4ba092e",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Baktfold",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-baktfold-sm-nmz-hypotheticals-faa",
+      "path": "data/SM/baktfold/SM_NMZ.hypotheticals.faa",
+      "sample": "SM",
+      "role": "annotation_source",
+      "size_bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Baktfold",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-baktfold-sm-nmz-hypotheticals-tsv",
+      "path": "data/SM/baktfold/SM_NMZ.hypotheticals.tsv",
+      "sample": "SM",
+      "role": "annotation_source",
+      "size_bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Baktfold",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-baktfold-sm-nmz-inference-tsv",
+      "path": "data/SM/baktfold/SM_NMZ.inference.tsv",
+      "sample": "SM",
+      "role": "annotation_source",
+      "size_bytes": 7696,
+      "sha256": "dfcfea8a07a968480ab93fabfe565550fd8073d002a7bae6ae8e34d6bc127f37",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Baktfold",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-baktfold-sm-nmz-json",
+      "path": "data/SM/baktfold/SM_NMZ.json",
+      "sample": "SM",
+      "role": "annotation_source",
+      "size_bytes": 20797880,
+      "sha256": "df96c2274a396c78e46e331fd936906c915900a09a156026381f21734ebd499a",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Baktfold",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-baktfold-sm-nmz-tsv",
+      "path": "data/SM/baktfold/SM_NMZ.tsv",
+      "sample": "SM",
+      "role": "annotation_source",
+      "size_bytes": 1166837,
+      "sha256": "8828a89000253de8333e9c45a9654f393b54da8077eb3b521e8d7151bd9dab82",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "Baktfold",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-derived-enriched-sm-nmz-eggnog-enriched-gbff",
+      "path": "data/SM/derived/enriched/SM-NMZ-eggnog-enriched.gbff",
+      "sample": "SM",
+      "role": "derived_output",
+      "size_bytes": 14975520,
+      "sha256": "6513327169594fb9c09b18a5ced830aca66f06ee3baa6beae60eb1fdd955878b",
+      "lineage": [
+        "artifact-data-sm-bakta-sm-nmz-embl",
+        "artifact-data-sm-bakta-sm-nmz-faa",
+        "artifact-data-sm-bakta-sm-nmz-ffn",
+        "artifact-data-sm-bakta-sm-nmz-fna",
+        "artifact-data-sm-bakta-sm-nmz-gbff",
+        "artifact-data-sm-bakta-sm-nmz-gff3",
+        "artifact-data-sm-bakta-sm-nmz-hypotheticals-faa",
+        "artifact-data-sm-bakta-sm-nmz-hypotheticals-tsv",
+        "artifact-data-sm-bakta-sm-nmz-inference-tsv",
+        "artifact-data-sm-bakta-sm-nmz-json",
+        "artifact-data-sm-bakta-sm-nmz-log",
+        "artifact-data-sm-bakta-sm-nmz-png",
+        "artifact-data-sm-bakta-sm-nmz-svg",
+        "artifact-data-sm-bakta-sm-nmz-tsv",
+        "artifact-data-sm-bakta-sm-nmz-txt",
+        "artifact-data-sm-baktfold-sm-nmz-embl",
+        "artifact-data-sm-baktfold-sm-nmz-faa",
+        "artifact-data-sm-baktfold-sm-nmz-ffn",
+        "artifact-data-sm-baktfold-sm-nmz-fna",
+        "artifact-data-sm-baktfold-sm-nmz-gbff",
+        "artifact-data-sm-baktfold-sm-nmz-gff3",
+        "artifact-data-sm-baktfold-sm-nmz-hypotheticals-faa",
+        "artifact-data-sm-baktfold-sm-nmz-hypotheticals-tsv",
+        "artifact-data-sm-baktfold-sm-nmz-inference-tsv",
+        "artifact-data-sm-baktfold-sm-nmz-json",
+        "artifact-data-sm-baktfold-sm-nmz-tsv",
+        "artifact-data-sm-evidence-sm-kofamkoala-txt",
+        "artifact-data-sm-evidence-sm-nmz-emapper-annotations-xlsx",
+        "artifact-data-sm-evidence-sm-nmz-query-emapper-annotations",
+        "artifact-data-sm-evidence-sm-nmz-query-emapper-hits",
+        "artifact-data-sm-evidence-sm-nmz-query-emapper-seed-orthologs",
+        "artifact-data-sm-evidence-sm-nmz-query-emapper-seed-orthologs-sorted",
+        "artifact-data-sm-evidence-sm-nmz-timing-json",
+        "artifact-data-sm-evidence-sm-result-ko-for-kegg-mapper-txt"
+      ],
+      "producer": {
+        "database": "not-applicable",
+        "name": "enrich-bakta",
+        "version": "0.3.0"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-derived-enriched-sm-nmz-eggnog-enriched-manifest-json",
+      "path": "data/SM/derived/enriched/SM-NMZ-eggnog-enriched.manifest.json",
+      "sample": "SM",
+      "role": "derived_output",
+      "size_bytes": 96763250,
+      "sha256": "745527425347e010ae1441ae42d975249d8d67a1e494dab18c1a2589b4672dec",
+      "lineage": [
+        "artifact-data-sm-bakta-sm-nmz-embl",
+        "artifact-data-sm-bakta-sm-nmz-faa",
+        "artifact-data-sm-bakta-sm-nmz-ffn",
+        "artifact-data-sm-bakta-sm-nmz-fna",
+        "artifact-data-sm-bakta-sm-nmz-gbff",
+        "artifact-data-sm-bakta-sm-nmz-gff3",
+        "artifact-data-sm-bakta-sm-nmz-hypotheticals-faa",
+        "artifact-data-sm-bakta-sm-nmz-hypotheticals-tsv",
+        "artifact-data-sm-bakta-sm-nmz-inference-tsv",
+        "artifact-data-sm-bakta-sm-nmz-json",
+        "artifact-data-sm-bakta-sm-nmz-log",
+        "artifact-data-sm-bakta-sm-nmz-png",
+        "artifact-data-sm-bakta-sm-nmz-svg",
+        "artifact-data-sm-bakta-sm-nmz-tsv",
+        "artifact-data-sm-bakta-sm-nmz-txt",
+        "artifact-data-sm-baktfold-sm-nmz-embl",
+        "artifact-data-sm-baktfold-sm-nmz-faa",
+        "artifact-data-sm-baktfold-sm-nmz-ffn",
+        "artifact-data-sm-baktfold-sm-nmz-fna",
+        "artifact-data-sm-baktfold-sm-nmz-gbff",
+        "artifact-data-sm-baktfold-sm-nmz-gff3",
+        "artifact-data-sm-baktfold-sm-nmz-hypotheticals-faa",
+        "artifact-data-sm-baktfold-sm-nmz-hypotheticals-tsv",
+        "artifact-data-sm-baktfold-sm-nmz-inference-tsv",
+        "artifact-data-sm-baktfold-sm-nmz-json",
+        "artifact-data-sm-baktfold-sm-nmz-tsv",
+        "artifact-data-sm-evidence-sm-kofamkoala-txt",
+        "artifact-data-sm-evidence-sm-nmz-emapper-annotations-xlsx",
+        "artifact-data-sm-evidence-sm-nmz-query-emapper-annotations",
+        "artifact-data-sm-evidence-sm-nmz-query-emapper-hits",
+        "artifact-data-sm-evidence-sm-nmz-query-emapper-seed-orthologs",
+        "artifact-data-sm-evidence-sm-nmz-query-emapper-seed-orthologs-sorted",
+        "artifact-data-sm-evidence-sm-nmz-timing-json",
+        "artifact-data-sm-evidence-sm-result-ko-for-kegg-mapper-txt"
+      ],
+      "producer": {
+        "database": "not-applicable",
+        "name": "enrich-bakta",
+        "version": "0.3.0"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-derived-restored-sm-nmz-eggnog-restored-gbff",
+      "path": "data/SM/derived/restored/SM-NMZ-eggnog-restored.gbff",
+      "sample": "SM",
+      "role": "derived_output",
+      "size_bytes": 13137534,
+      "sha256": "17e76587be6ff2c169426379cf288cdcd3c20d1e3a92d72e9b564a4981648076",
+      "lineage": [
+        "artifact-data-sm-bakta-sm-nmz-embl",
+        "artifact-data-sm-bakta-sm-nmz-faa",
+        "artifact-data-sm-bakta-sm-nmz-ffn",
+        "artifact-data-sm-bakta-sm-nmz-fna",
+        "artifact-data-sm-bakta-sm-nmz-gbff",
+        "artifact-data-sm-bakta-sm-nmz-gff3",
+        "artifact-data-sm-bakta-sm-nmz-hypotheticals-faa",
+        "artifact-data-sm-bakta-sm-nmz-hypotheticals-tsv",
+        "artifact-data-sm-bakta-sm-nmz-inference-tsv",
+        "artifact-data-sm-bakta-sm-nmz-json",
+        "artifact-data-sm-bakta-sm-nmz-log",
+        "artifact-data-sm-bakta-sm-nmz-png",
+        "artifact-data-sm-bakta-sm-nmz-svg",
+        "artifact-data-sm-bakta-sm-nmz-tsv",
+        "artifact-data-sm-bakta-sm-nmz-txt",
+        "artifact-data-sm-baktfold-sm-nmz-embl",
+        "artifact-data-sm-baktfold-sm-nmz-faa",
+        "artifact-data-sm-baktfold-sm-nmz-ffn",
+        "artifact-data-sm-baktfold-sm-nmz-fna",
+        "artifact-data-sm-baktfold-sm-nmz-gbff",
+        "artifact-data-sm-baktfold-sm-nmz-gff3",
+        "artifact-data-sm-baktfold-sm-nmz-hypotheticals-faa",
+        "artifact-data-sm-baktfold-sm-nmz-hypotheticals-tsv",
+        "artifact-data-sm-baktfold-sm-nmz-inference-tsv",
+        "artifact-data-sm-baktfold-sm-nmz-json",
+        "artifact-data-sm-baktfold-sm-nmz-tsv",
+        "artifact-data-sm-evidence-sm-kofamkoala-txt",
+        "artifact-data-sm-evidence-sm-nmz-emapper-annotations-xlsx",
+        "artifact-data-sm-evidence-sm-nmz-query-emapper-annotations",
+        "artifact-data-sm-evidence-sm-nmz-query-emapper-hits",
+        "artifact-data-sm-evidence-sm-nmz-query-emapper-seed-orthologs",
+        "artifact-data-sm-evidence-sm-nmz-query-emapper-seed-orthologs-sorted",
+        "artifact-data-sm-evidence-sm-nmz-timing-json",
+        "artifact-data-sm-evidence-sm-result-ko-for-kegg-mapper-txt"
+      ],
+      "producer": {
+        "database": "not-applicable",
+        "name": "enrich-bakta",
+        "version": "0.3.0"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-derived-restored-sm-nmz-eggnog-restored-manifest-json",
+      "path": "data/SM/derived/restored/SM-NMZ-eggnog-restored.manifest.json",
+      "sample": "SM",
+      "role": "derived_output",
+      "size_bytes": 19406,
+      "sha256": "43e176133a42e40f7246e3983ae15dd58aebbe476a36c0e3b7b08e4c0f07c133",
+      "lineage": [
+        "artifact-data-sm-bakta-sm-nmz-embl",
+        "artifact-data-sm-bakta-sm-nmz-faa",
+        "artifact-data-sm-bakta-sm-nmz-ffn",
+        "artifact-data-sm-bakta-sm-nmz-fna",
+        "artifact-data-sm-bakta-sm-nmz-gbff",
+        "artifact-data-sm-bakta-sm-nmz-gff3",
+        "artifact-data-sm-bakta-sm-nmz-hypotheticals-faa",
+        "artifact-data-sm-bakta-sm-nmz-hypotheticals-tsv",
+        "artifact-data-sm-bakta-sm-nmz-inference-tsv",
+        "artifact-data-sm-bakta-sm-nmz-json",
+        "artifact-data-sm-bakta-sm-nmz-log",
+        "artifact-data-sm-bakta-sm-nmz-png",
+        "artifact-data-sm-bakta-sm-nmz-svg",
+        "artifact-data-sm-bakta-sm-nmz-tsv",
+        "artifact-data-sm-bakta-sm-nmz-txt",
+        "artifact-data-sm-baktfold-sm-nmz-embl",
+        "artifact-data-sm-baktfold-sm-nmz-faa",
+        "artifact-data-sm-baktfold-sm-nmz-ffn",
+        "artifact-data-sm-baktfold-sm-nmz-fna",
+        "artifact-data-sm-baktfold-sm-nmz-gbff",
+        "artifact-data-sm-baktfold-sm-nmz-gff3",
+        "artifact-data-sm-baktfold-sm-nmz-hypotheticals-faa",
+        "artifact-data-sm-baktfold-sm-nmz-hypotheticals-tsv",
+        "artifact-data-sm-baktfold-sm-nmz-inference-tsv",
+        "artifact-data-sm-baktfold-sm-nmz-json",
+        "artifact-data-sm-baktfold-sm-nmz-tsv",
+        "artifact-data-sm-evidence-sm-kofamkoala-txt",
+        "artifact-data-sm-evidence-sm-nmz-emapper-annotations-xlsx",
+        "artifact-data-sm-evidence-sm-nmz-query-emapper-annotations",
+        "artifact-data-sm-evidence-sm-nmz-query-emapper-hits",
+        "artifact-data-sm-evidence-sm-nmz-query-emapper-seed-orthologs",
+        "artifact-data-sm-evidence-sm-nmz-query-emapper-seed-orthologs-sorted",
+        "artifact-data-sm-evidence-sm-nmz-timing-json",
+        "artifact-data-sm-evidence-sm-result-ko-for-kegg-mapper-txt"
+      ],
+      "producer": {
+        "database": "not-applicable",
+        "name": "enrich-bakta",
+        "version": "0.3.0"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-evidence-sm-kofamkoala-txt",
+      "path": "data/SM/evidence/SM-KofamKOALA.txt",
+      "sample": "SM",
+      "role": "functional_evidence",
+      "size_bytes": 337362,
+      "sha256": "54eaede6993296db680b91598f32cb6a52d492219ea991911353a3206db7be7d",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "KofamScan",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-evidence-sm-nmz-emapper-annotations-xlsx",
+      "path": "data/SM/evidence/SM-NMZ-emapper_annotations.xlsx",
+      "sample": "SM",
+      "role": "functional_evidence",
+      "size_bytes": 746743,
+      "sha256": "1278cf85c3ac647c805f395f0a6bb5e602ef6c1b480639e64979d289f7cb26bd",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "eggNOG-mapper",
+        "version": "3.0.0-beta6"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-evidence-sm-nmz-query-emapper-annotations",
+      "path": "data/SM/evidence/SM-NMZ-query.emapper.annotations",
+      "sample": "SM",
+      "role": "functional_evidence",
+      "size_bytes": 1266182,
+      "sha256": "f1b082d16fe1eb350457f49148042d838a1354ecd64ff513237085e21cb0443a",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "eggNOG-mapper",
+        "version": "3.0.0-beta6"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-evidence-sm-nmz-query-emapper-hits",
+      "path": "data/SM/evidence/SM-NMZ-query.emapper.hits",
+      "sample": "SM",
+      "role": "functional_evidence",
+      "size_bytes": 396328,
+      "sha256": "8f50e0ad4e9cc01ff665a2513278d61b71b08dfc3673d29493393e02d1b9e7fe",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "eggNOG-mapper",
+        "version": "3.0.0-beta6"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-evidence-sm-nmz-query-emapper-seed-orthologs",
+      "path": "data/SM/evidence/SM-NMZ-query.emapper.seed_orthologs",
+      "sample": "SM",
+      "role": "functional_evidence",
+      "size_bytes": 302197,
+      "sha256": "8045180673ba4431159c54e708d8594dc09707870ba384209c5320933dc9b0aa",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "eggNOG-mapper",
+        "version": "3.0.0-beta6"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-evidence-sm-nmz-query-emapper-seed-orthologs-sorted",
+      "path": "data/SM/evidence/SM-NMZ-query.emapper.seed_orthologs.sorted",
+      "sample": "SM",
+      "role": "functional_evidence",
+      "size_bytes": 301393,
+      "sha256": "f0f1b4e060edcd884ba25b0cb909af908fab88dd7cb4e4ffbd1b2aabe8057bdd",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "eggNOG-mapper",
+        "version": "3.0.0-beta6"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-evidence-sm-nmz-timing-json",
+      "path": "data/SM/evidence/SM-NMZ-timing.json",
+      "sample": "SM",
+      "role": "functional_evidence",
+      "size_bytes": 176,
+      "sha256": "0e86ec9d8922cae8771e0edbd862db6894ba1d2552cd88785065674378ce12d9",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "analysis-run",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-evidence-sm-result-ko-for-kegg-mapper-txt",
+      "path": "data/SM/evidence/SM-result_ko-for-kegg-mapper.txt",
+      "sample": "SM",
+      "role": "functional_evidence",
+      "size_bytes": 90377,
+      "sha256": "ec217762ef7cd52d0021bc8d1c86d2d81bdd2a53f311825a9aef5c72d1a0a193",
+      "lineage": [],
+      "producer": {
+        "database": "not-recorded",
+        "name": "KEGG Mapper",
+        "version": "not-recorded"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [],
+        "code_commit": null
+      }
+    }
+  ]
+}
