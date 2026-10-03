@@ -1,0 +1,13 @@
+# Changelog
+
+## 0.3.0 - 2026-10-03
+
+- Reorganized the implementation into the `enrich_bakta_lib` package while
+  retaining tested root compatibility launchers and the legacy normalizer.
+- Added semantic GenBank identity checks, translation-evidence provenance,
+  schema-aware eggNOG parsing, typed candidate decisions, and staged artifacts.
+- Added curated C14, SM, and BK71A publication manifests and Git LFS policy.
+- Added the GPL-3.0-or-later code license and release validation documentation.
+
+Functional outputs that use `import-faa` remain explicitly imported protein
+evidence; they are not claims of independent genomic translation validation.

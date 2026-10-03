@@ -1,0 +1,17 @@
+enrich-bakta curated biological data
+
+The curated artifacts listed in docs/data/PUBLISHED-MANIFEST.json are made
+available under the Creative Commons Attribution 4.0 International license
+(CC BY 4.0), by authorization of the dataset owner.
+
+License text and deed:
+https://creativecommons.org/licenses/by/4.0/
+
+Suggested attribution:
+"enrich-bakta curated C14, SM, and BK71A data, 2026."
+
+This grant applies only to the curated artifacts selected by the published
+manifest. It does not relicense the upstream eggNOG parser fixture under
+tests/fixtures/official/eggnog-v3; that fixture retains its upstream terms and
+notice. Artifact-level historical or scientific limitations remain recorded in
+the manifest and docs/data/ACCEPTANCE.md.
