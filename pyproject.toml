@@ -4,26 +4,34 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "enrich-bakta"
-version = "0.2.0"
+version = "0.3.0"
 description = "Byte-preserving enrichment of Bakta GenBank annotations"
 readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = ["biopython>=1.83,<2"]
+
+[project.urls]
+Homepage = "https://github.com/WhyAdr/enrich-bakta"
+Repository = "https://github.com/WhyAdr/enrich-bakta.git"
+Issues = "https://github.com/WhyAdr/enrich-bakta/issues"
 
 [project.optional-dependencies]
 xlsx = ["openpyxl>=3.1,<4"]
 dev = [
+  "build>=1.2,<2",
   "mypy>=1.10,<2",
   "pytest>=8,<10",
   "ruff>=0.14,<1",
 ]
 
 [project.scripts]
-enrich-bakta = "enrich_bakta:main"
-enrich-bakta-baktfold = "graft_baktfold_additions:main"
-enrich-bakta-kofam = "merge_kofamscan_bakta:main"
-enrich-bakta-eggnog = "merge_eggnog_bakta:main"
-enrich-bakta-restore-translations = "restore_bakta_translations:main"
+enrich-bakta = "enrich_bakta_lib.workflows.enrich:main"
+enrich-bakta-baktfold = "enrich_bakta_lib.sources.baktfold:main"
+enrich-bakta-kofam = "enrich_bakta_lib.sources.kofam:main"
+enrich-bakta-eggnog = "enrich_bakta_lib.sources.eggnog:main"
+enrich-bakta-restore-translations = "enrich_bakta_lib.workflows.restore_translations:main"
 
 [tool.setuptools]
 py-modules = [
@@ -35,22 +43,23 @@ py-modules = [
   "restore_bakta_translations",
 ]
 
+[tool.setuptools.package-dir]
+"" = "."
+enrich_bakta_lib = "src/enrich_bakta_lib"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["enrich_bakta_lib*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 [tool.ruff]
-extend-exclude = ["*.md", "normalize_baktfold.py"]
+extend-exclude = ["*.md", "normalize_baktfold.py", "legacy/"]
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.mypy]
 ignore_missing_imports = true
-files = [
-  "enrich_bakta.py",
-  "graft_baktfold_additions.py",
-  "merge_eggnog_bakta.py",
-  "merge_engine.py",
-  "merge_kofamscan_bakta.py",
-  "restore_bakta_translations.py",
-]
+files = ["src/enrich_bakta_lib"]

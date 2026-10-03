@@ -161,6 +161,34 @@ def test_baktfold_rejects_ambiguous_gene_and_writes_nothing(tmp_path: Path) -> N
     assert not output.exists()
 
 
+def test_baktfold_invalid_ec_values_are_explicitly_skipped(tmp_path: Path) -> None:
+    base = write(tmp_path / "base.gbff", record_bytes("TEST", "T_0001"))
+    source = write(
+        tmp_path / "source.gbff",
+        record_bytes("TEST", "T_0001", db_xrefs=("EC:3.5.1.n3", "EC:1.2.3.-")),
+    )
+    output = tmp_path / "out.gbff"
+    manifest = tmp_path / "out.manifest.json"
+    stats = graft(
+        base,
+        source,
+        output,
+        manifest_path=manifest,
+        add_comment_note=False,
+        invalid_ec_policy="skip",
+    )
+    assert stats["invalid_ec_value_count"] == 1
+    assert stats["invalid_ec_values"][0]["status"] == "invalid_value"
+    assert stats["ec_added"] == 1
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    invalid = [
+        row for row in payload["decisions"] if row["final_status"] == "invalid_value"
+    ]
+    assert len(invalid) == 1
+    assert invalid[0]["raw_value"] == "EC:3.5.1.n3"
+    assert b"3.5.1.n3" not in output.read_bytes()
+
+
 @pytest.mark.parametrize(
     "mutation, message",
     [
@@ -451,6 +479,44 @@ def test_eggnog_header_driven_parser_and_merge_provenance(tmp_path: Path) -> Non
     assert gene["normalized_value"] == "name"
 
 
+def test_eggnog_authoritative_pair_conflict_is_diagnostic(tmp_path: Path) -> None:
+    base_data = record_bytes("TEST", "T_0001", gene="base").replace(
+        b'                     /gene="base"\nORIGIN',
+        b'                     /gene="other"\nORIGIN',
+    )
+    base = write(tmp_path / "base.gbff", base_data)
+    faa = write(tmp_path / "base.faa", b">T_0001\nMK\n")
+    eggnog = write(
+        tmp_path / "annotations.tsv",
+        eggnog_bytes("T_0001\tseed\t1e-4\t10\t-\txyz\t-\t-\t-\t-\thhhhhhhhhhhhh"),
+    )
+    output = tmp_path / "out.gbff"
+    manifest = tmp_path / "manifest.json"
+    merge_eggnog(
+        base,
+        faa,
+        eggnog,
+        output,
+        manifest_path=manifest,
+        eggnog_version="3.0.0-beta6",
+        add_comment_note=False,
+    )
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    diagnostics = [
+        row
+        for row in payload["entries"]
+        if row.get("entry_type") == "eggnog_pair_conflict"
+    ]
+    assert diagnostics
+    assert diagnostics[0]["status"] == "unresolved_identity"
+    decisions = [
+        row for row in payload["decisions"] if row["field"] == "Preferred_name"
+    ]
+    assert decisions
+    assert decisions[0]["final_status"] == "unresolved_identity"
+    assert b'/gene="xyz"' not in output.read_bytes()
+
+
 def test_eggnog_pfam_og_notes_manifest_and_context_sidecar(
     tmp_path: Path,
 ) -> None:
@@ -635,6 +701,9 @@ def test_eggnog_xlsx_rejects_an_empty_header(
     class Workbook:
         sheetnames = ["annotations"]
 
+        def close(self):
+            pass
+
         def __getitem__(self, key: str):
             assert key == "annotations"
             return worksheet
@@ -642,7 +711,9 @@ def test_eggnog_xlsx_rejects_an_empty_header(
     fake_openpyxl = SimpleNamespace(load_workbook=lambda *_args, **_kwargs: Workbook())
     monkeypatch.setitem(sys.modules, "openpyxl", fake_openpyxl)
     with pytest.raises(MergeError, match="empty column names"):
-        parse_eggnog_path(tmp_path / "annotations.xlsx", expected_version="3.0.0-beta6")
+        parse_eggnog_path(
+            tmp_path / "annotations.xlsx", expected_version="3.0.0-beta6", data=b""
+        )
 
 
 def test_eggnog_confidence_and_existing_values_are_not_reinserted(
@@ -758,7 +829,7 @@ def test_unified_merge_reconciles_eggnog_and_kofam(tmp_path: Path) -> None:
     assert metadata["baktfold_version"] == "0.1.0"
     assert metadata["kofam_sha256"]
     assert metadata["eggnog_sha256"]
-    assert metadata["tool_version"] == "0.2.0"
+    assert metadata["tool_version"] == "0.3.0"
     assert metadata["clean_gene_suffix"] is True
     assert metadata["baktfold_version_detected"] is True
     entries = payload["entries"]
