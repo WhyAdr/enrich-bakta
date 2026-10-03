@@ -1,0 +1,9 @@
+This fixture was copied from the eggNOG-mapper repository at commit
+9aef364017956369a6216a2fbe276473e8a2f0d3:
+
+https://github.com/eggnogdb/eggnog-mapper/blob/9aef364017956369a6216a2fbe276473e8a2f0d3/tests/fixtures_v7/test_diamond.emapper.annotations
+
+It is retained for parser compatibility and attribution. enrich-bakta does
+not relicense this upstream fixture and does not apply the repository's GPL or
+the curated biological-data CC BY 4.0 grant to it. Consult the upstream
+repository's licensing and notice files for the terms that govern this file.

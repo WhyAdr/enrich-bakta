@@ -1,0 +1,26 @@
+# Curated biological corpus: keep large bytes out of the Git object database.
+data/C14/bakta/*.gbff filter=lfs diff=lfs merge=lfs -text
+data/C14/bakta/*.faa filter=lfs diff=lfs merge=lfs -text
+data/C14/baktfold/*.gbff filter=lfs diff=lfs merge=lfs -text
+data/C14/baktfold/*.faa filter=lfs diff=lfs merge=lfs -text
+data/C14/evidence/*-KofamKOALA.txt filter=lfs diff=lfs merge=lfs -text
+data/C14/evidence/*-emapper_annotations.xlsx filter=lfs diff=lfs merge=lfs -text
+data/C14/evidence/*-query.emapper.* filter=lfs diff=lfs merge=lfs -text
+data/C14/derived/restored/*.gbff filter=lfs diff=lfs merge=lfs -text
+data/C14/derived/restored/*.manifest.json filter=lfs diff=lfs merge=lfs -text
+data/C14/derived/enriched/*.gbff filter=lfs diff=lfs merge=lfs -text
+data/C14/derived/enriched/*.manifest.json filter=lfs diff=lfs merge=lfs -text
+
+data/SM/bakta/*.gbff filter=lfs diff=lfs merge=lfs -text
+data/SM/bakta/*.faa filter=lfs diff=lfs merge=lfs -text
+data/SM/baktfold/*.gbff filter=lfs diff=lfs merge=lfs -text
+data/SM/baktfold/*.faa filter=lfs diff=lfs merge=lfs -text
+data/SM/evidence/*-KofamKOALA.txt filter=lfs diff=lfs merge=lfs -text
+data/SM/evidence/*-emapper_annotations.xlsx filter=lfs diff=lfs merge=lfs -text
+data/SM/evidence/*-query.emapper.* filter=lfs diff=lfs merge=lfs -text
+data/SM/derived/restored/*.gbff filter=lfs diff=lfs merge=lfs -text
+data/SM/derived/restored/*.manifest.json filter=lfs diff=lfs merge=lfs -text
+data/SM/derived/enriched/*.gbff filter=lfs diff=lfs merge=lfs -text
+data/SM/derived/enriched/*.manifest.json filter=lfs diff=lfs merge=lfs -text
+
+data/BK71A/derived/restored/*.gbff filter=lfs diff=lfs merge=lfs -text

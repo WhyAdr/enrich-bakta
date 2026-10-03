@@ -1,0 +1,24 @@
+## Mon Aug 17 16:43:53 2026
+## emapper-3.0.0-beta6
+## /usr/local/bin/emapper.py -i input.fasta -o query --output_dir output --temp_dir output --data_dir /eggnog-data --cpu 10 --override --itype proteins -m diamond --dmnd_iterate no --dmnd_block_size 2 --dmnd_index_chunks 4
+##
+## applied filters:
+##   annot_evalue=0.001
+##   annot_score=null
+##   donor_pool=closest
+##   excluded_taxa=null
+##   go_namespace_split=True
+##   lazy_cascade=True
+##   pfam_realign=none
+##   sort_entries=True
+##   target_orthologs=all
+##   target_taxa=null
+##   tax_scope=auto
+## annotation_confidence: one char per annotation field
+## confidence codes: h=high m=medium l=low -=not annotated
+## confidence field order: Preferred_name GOs EC KEGG_ko KEGG_Pathway KEGG_Module KEGG_Reaction KEGG_rclass BRITE KEGG_TC CAZy BiGG_Reaction PFAMs
+#query	seed_ortholog	evalue	score	eggNOG_OGs	tax_ceiling	farthest_donor_lineage	COG_category	Preferred_name	GOs	EC	KEGG_ko	KEGG_Pathway	KEGG_Module	KEGG_Reaction	KEGG_rclass	BRITE	KEGG_TC	CAZy	BiGG_Reaction	PFAMs	annotation_confidence
+## 4599 queries scanned
+## Total time (seconds): 117.71659517288208
+## Rate: 39.07 q/s
+OJMJKD_022085	357240.GCA_001063355_01346	1.01e-64	198.0	Ribosomal_S10@131567|A-1	Prokaryota	1;131567;2;3379134;1783270;68336;976;117743;200644;49546;237;196869;1938609	COG0051	rpsJ	GO:0000028,GO:0001072,GO:0002181,GO:0003735,GO:0005515,GO:0005737,GO:0005829,GO:0008023,GO:0022627,GO:0031564,GO:0032784	-	K02946	03010	-	-	-	00001,01610,03011	-	-	-	Ribosomal_S10_7_100	ml-hh---h---h
