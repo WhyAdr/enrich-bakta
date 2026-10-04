@@ -1,3 +1,22 @@
+# Sol → Luna: InterProScan feature execution brief
+
+Prepared for Wahyu on 2026-10-04 following an independent audit of remote main
+at e5e0499fc602c58be55264d75d8ed8e92a972636 and all nine published InterProScan
+exports. The local repository plan was refined at
+`docs/plans/interproscan-enrichment.md`; no feature implementation, remote push,
+release tag or CI dispatch was performed during this audit.
+
+The execution specification below is self-contained. Luna can begin from the
+pinned main and apply its requirements directly. The critical corrections are
+explicit native TSV layouts, shared planner/ledger Pfam support, bounded
+snapshot parsing, exact query identity, known-legacy lineage protection, and
+correct finalized context hashing. Validation completed: 146 tests, quality
+checks, 42 published artifacts, all nine export hashes and 22 existing
+scientific acceptance checks. New InterProScan outputs still require review
+before their scientific baselines are pinned.
+
+---
+
 # InterProScan enrichment: audited implementation plan and Luna handoff
 
 - **Audit date:** 2026-10-04
