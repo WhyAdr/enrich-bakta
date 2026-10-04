@@ -32,6 +32,7 @@ enrich-bakta = "enrich_bakta_lib.workflows.enrich:main"
 enrich-bakta-baktfold = "enrich_bakta_lib.sources.baktfold:main"
 enrich-bakta-kofam = "enrich_bakta_lib.sources.kofam:main"
 enrich-bakta-eggnog = "enrich_bakta_lib.sources.eggnog:main"
+enrich-bakta-interproscan = "enrich_bakta_lib.sources.interproscan:main"
 enrich-bakta-restore-translations = "enrich_bakta_lib.workflows.restore_translations:main"
 
 [tool.setuptools]
@@ -40,6 +41,7 @@ py-modules = [
   "graft_baktfold_additions",
   "merge_eggnog_bakta",
   "merge_engine",
+  "merge_interproscan_bakta",
   "merge_kofamscan_bakta",
   "restore_bakta_translations",
 ]

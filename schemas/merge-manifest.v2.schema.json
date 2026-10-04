@@ -28,7 +28,8 @@
           "enum": ["enrich-bakta.candidate-ledger.v3"]
         },
         "candidate_role_counts": {"$ref": "#/$defs/roleCounts"},
-        "insertion_role_counts": {"$ref": "#/$defs/roleCounts"}
+        "insertion_role_counts": {"$ref": "#/$defs/roleCounts"},
+        "context_report_sha256": {"$ref": "#/$defs/sha256"}
       },
       "additionalProperties": true
     },

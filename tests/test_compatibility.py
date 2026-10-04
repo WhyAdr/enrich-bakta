@@ -12,6 +12,7 @@ PAIRS = {
     "graft_baktfold_additions": "sources.baktfold",
     "merge_kofamscan_bakta": "sources.kofam",
     "merge_eggnog_bakta": "sources.eggnog",
+    "merge_interproscan_bakta": "sources.interproscan",
     "enrich_bakta": "workflows.enrich",
     "restore_bakta_translations": "workflows.restore_translations",
 }
