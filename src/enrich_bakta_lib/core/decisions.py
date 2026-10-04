@@ -184,6 +184,18 @@ def _reason_code(
     source_id: str,
     gene_conflict_policy: str,
 ) -> str:
+    # Reconciliation can change an adapter's inserted proposal into a rejection.
+    # Resolve that outcome before consulting its planned reason.
+    if final_status == "suppressed_conflict" and qualifier == "gene":
+        preferred = {
+            "prefer-eggnog": "eggNOG",
+            "prefer-baktfold": "Baktfold",
+        }.get(gene_conflict_policy)
+        return (
+            "gene_conflict_source_preference"
+            if preferred is not None and source_id != preferred
+            else "gene_conflict_no_preference"
+        )
     explicit = row.get("reason_code")
     if isinstance(explicit, str) and explicit:
         return explicit
@@ -199,16 +211,6 @@ def _reason_code(
         return "protein_identity_mismatch"
     if final_status == "suppressed_unsupported_pair":
         return "unsupported_pair"
-    if final_status == "suppressed_conflict" and qualifier == "gene":
-        preferred = {
-            "prefer-eggnog": "eggNOG",
-            "prefer-baktfold": "Baktfold",
-        }.get(gene_conflict_policy)
-        return (
-            "gene_conflict_source_preference"
-            if preferred is not None and source_id != preferred
-            else "gene_conflict_no_preference"
-        )
     return {
         "filtered_confidence": "confidence_below_threshold",
         "skipped_partial_ec": "partial_ec_not_promoted",
@@ -279,6 +281,7 @@ def build_candidate_ledger(
         )
     covered: set[int] = set()
     candidates: list[CandidateDecision] = []
+    source_rows_by_candidate: dict[str, dict[str, Any]] = {}
 
     def matching_insertions(
         source_id: str,
@@ -380,6 +383,7 @@ def build_candidate_ledger(
             gene_conflict_policy=gene_conflict_policy,
         )
         row["planned_status"] = planned_status
+        row["planned_reason_code"] = row.get("reason_code", "")
         row["planned_emitted_qualifiers"] = row.get("emitted_qualifiers", "")
         row["final_status"] = final_status
         row["status"] = final_status
@@ -395,9 +399,11 @@ def build_candidate_ledger(
             "normalized_value": normalized,
             "target_feature_uids": sorted(target_uids),
         }
+        candidate_id = stable_id("candidate", payload)
+        source_rows_by_candidate[candidate_id] = row
         candidates.append(
             CandidateDecision(
-                candidate_id=stable_id("candidate", payload),
+                candidate_id=candidate_id,
                 source_id=source_id,
                 source_sha256=source_sha,
                 target_feature_uids=tuple(sorted(target_uids)),
@@ -563,6 +569,14 @@ def build_candidate_ledger(
             }
             candidate.supporting_candidate_ids = tuple(sorted(supporting))
 
+    # Publish source projections only after shared-support reconciliation is done.
+    for candidate in candidates:
+        source_row = source_rows_by_candidate.get(candidate.candidate_id)
+        if source_row is not None:
+            source_row["candidate_id"] = candidate.candidate_id
+            source_row["status"] = candidate.final_status
+            source_row["final_status"] = candidate.final_status
+            source_row["reason_code"] = candidate.reason_code
     candidates.sort(key=lambda item: item.candidate_id)
     rows = [candidate.as_dict() for candidate in candidates]
     counts = {
@@ -574,7 +588,9 @@ def build_candidate_ledger(
             candidate.final_status in EMITTED_STATUSES for candidate in candidates
         ),
         "suppressed_candidate_count": sum(
-            candidate.final_status == "suppressed_conflict" for candidate in candidates
+            candidate.final_status is not None
+            and candidate.final_status.startswith("suppressed_")
+            for candidate in candidates
         ),
         "candidate_insertion_count": len(final),
         "candidate_emitting_feature_count": len(
