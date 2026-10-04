@@ -1655,6 +1655,7 @@ def finalize_merge(
         },
         output_sha256,
     )
+    sidecar_bytes: bytes | None = None
     if sidecar_payload is not None:
         sidecar_metadata = sidecar_payload.get("metadata")
         if isinstance(sidecar_metadata, dict):
@@ -1667,6 +1668,8 @@ def finalize_merge(
                     "tool_version": TOOL_VERSION,
                 }
             )
+        sidecar_bytes = json_sidecar_bytes(sidecar_payload)
+        metadata["context_report_sha256"] = sha256_bytes(sidecar_bytes)
     artifacts = [(output_path, merged)]
     if manifest_path is not None:
         rows = insertion_rows(applied)
@@ -1690,8 +1693,8 @@ def finalize_merge(
                     }
                 )
         artifacts.append((manifest_path, manifest_bytes(manifest_path, metadata, rows)))
-    if sidecar_path is not None and sidecar_payload is not None:
-        artifacts.append((sidecar_path, json_sidecar_bytes(sidecar_payload)))
+    if sidecar_path is not None and sidecar_bytes is not None:
+        artifacts.append((sidecar_path, sidecar_bytes))
     stage_artifacts(artifacts, inputs)
     return {
         "output_sha256": metadata["output_sha256"],
