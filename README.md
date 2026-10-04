@@ -1,6 +1,6 @@
 # enrich-bakta
 
-Release `0.3.0` is published under the GNU GPL v3 or later. Curated owner-
+Version `0.3.1` is distributed under the GNU GPL v3 or later. Curated owner-
 authorized biological artifacts are published separately under CC BY 4.0; see
 [`docs/data/PUBLISHING.md`](docs/data/PUBLISHING.md).
 

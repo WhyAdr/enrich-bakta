@@ -45,4 +45,4 @@ def test_module_entry_point(tmp_path):
         text=True,
     )
     assert result.returncode == 0, result.stderr
-    assert "0.3.0" in result.stdout
+    assert "0.3.1" in result.stdout

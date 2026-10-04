@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.1 - 2026-10-04
+
 - Hardened complete-CDS translation validation and preserved imported/restored
   translation lineage through every standalone and unified workflow.
 - Added exhaustive Baktfold decisions, typed evidence roles, class-specific
@@ -10,6 +12,10 @@
   hit evidence for existing KO annotations.
 - Added a checked-in merge-manifest schema, dependency-floor coverage, and
   separate dataset-integrity and scientific-rerun CI gates.
+- Synchronized source-entry projections with final decisions, retained planned
+  reasons separately, and counted every suppressed candidate class.
+- Added a reviewed C14/SM scientific baseline that fails closed on input,
+  producer, policy, output, count, translation-lineage, or manifest drift.
 
 ## 0.3.0 - 2026-10-03
 
