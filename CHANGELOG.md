@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Hardened complete-CDS translation validation and preserved imported/restored
+  translation lineage through every standalone and unified workflow.
+- Added exhaustive Baktfold decisions, typed evidence roles, class-specific
+  provenance support, per-node reconciliation reasons, and final-output checks.
+- Restored published eggNOG XLSX compatibility and retained substantive Kofam
+  hit evidence for existing KO annotations.
+- Added a checked-in merge-manifest schema, dependency-floor coverage, and
+  separate dataset-integrity and scientific-rerun CI gates.
+
 ## 0.3.0 - 2026-10-03
 
 - Reorganized the implementation into the `enrich_bakta_lib` package while
