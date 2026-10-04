@@ -50,6 +50,17 @@ jobs:
       - run: python -m pytest -q
       - run: python -m build --no-isolation
 
+  manifest-schema:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e ".[dev,xlsx]"
+      - run: python -m pytest -q tests/test_manifest_schema.py
+
   package:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -104,7 +115,7 @@ jobs:
               cwd=target,
           )
 
-  dataset-manifest:
+  dataset-bytes:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
@@ -116,3 +127,25 @@ jobs:
           python-version: "3.12"
       - run: git lfs pull
       - run: python tools/validate_dataset_manifest.py docs/data/PUBLISHED-MANIFEST.json
+
+  scientific-reruns:
+    if: github.event_name == 'workflow_dispatch'
+    needs: dataset-bytes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: git lfs pull
+      - run: python -m pip install -e ".[dev,xlsx]"
+      - run: python tools/run_followthrough_real_checks.py
+      - run: python tools/run_followthrough_chain_checks.py
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: followthrough-scientific-results
+          path: .test-output/followthrough/*.json

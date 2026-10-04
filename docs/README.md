@@ -7,6 +7,7 @@ redistribution status.
 
 - [Dataset inventory rules](data/README.md)
 - [Dataset manifest schema](data/MANIFEST.schema.json)
+- [Merge manifest schema](../schemas/merge-manifest.v2.schema.json)
 - [Curated dataset publication](data/PUBLISHING.md)
 - [Historical audit applicability](audits/README.md)
 - [Architecture history](architecture/README.md)

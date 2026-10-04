@@ -260,8 +260,12 @@ gene name has both exact targets; shared values retain all source support.
 incomplete authoritative name. Kofam hit notes are substantive profile evidence
 and remain eligible when the KO already exists, including with
 `--no-feature-provenance`. Counts distinguish functional and provenance
-insertions. Baktfold's existing/no-op and rejected proposals are not yet an
-exhaustive per-value decision ledger; their current summaries remain in metadata.
+insertions. Baktfold records every supported source value, including existing,
+authoritative-name conflict, unsupported-pair, and protein-mismatch outcomes.
+Every decision has an explicit role, evidence class, and reconciliation reason;
+producer-provenance links identify accepted candidates in the same evidence
+class. JSON manifests conform to
+[`schemas/merge-manifest.v2.schema.json`](schemas/merge-manifest.v2.schema.json).
 
 These xrefs follow the project's enrichment convention. Formal submission needs
 the current [INSDC db_xref controlled vocabulary](https://www.insdc.org/submitting-standards/dbxref-qualifier-vocabulary/);

@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WhyAdr/enrich-bakta/schemas/merge-manifest.v2.schema.json",
+  "title": "enrich-bakta merge manifest v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "metadata", "entries", "decisions"],
+  "properties": {
+    "schema": {
+      "const": "enrich-bakta.merge-manifest.v2"
+    },
+    "metadata": {
+      "type": "object",
+      "required": [
+        "tool_version",
+        "base_sha256",
+        "output_sha256",
+        "insertions",
+        "records"
+      ],
+      "properties": {
+        "tool_version": {"type": "string", "minLength": 1},
+        "base_sha256": {"$ref": "#/$defs/sha256"},
+        "output_sha256": {"$ref": "#/$defs/sha256"},
+        "insertions": {"type": "integer", "minimum": 0},
+        "records": {"type": "integer", "minimum": 1},
+        "candidate_ledger_schema": {
+          "enum": ["enrich-bakta.candidate-ledger.v3"]
+        },
+        "candidate_role_counts": {"$ref": "#/$defs/roleCounts"},
+        "insertion_role_counts": {"$ref": "#/$defs/roleCounts"}
+      },
+      "additionalProperties": true
+    },
+    "entries": {
+      "type": "array",
+      "items": {"type": "object"}
+    },
+    "decisions": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/candidateDecision"}
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "role": {
+      "enum": [
+        "context",
+        "functional_proposal",
+        "producer_provenance",
+        "substantive_evidence"
+      ]
+    },
+    "roleCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "context",
+        "functional_proposal",
+        "producer_provenance",
+        "substantive_evidence"
+      ],
+      "properties": {
+        "context": {"type": "integer", "minimum": 0},
+        "functional_proposal": {"type": "integer", "minimum": 0},
+        "producer_provenance": {"type": "integer", "minimum": 0},
+        "substantive_evidence": {"type": "integer", "minimum": 0}
+      }
+    },
+    "finalStatus": {
+      "enum": [
+        "emitted",
+        "shared_support",
+        "supported_existing",
+        "suppressed_conflict",
+        "suppressed_authoritative_gene",
+        "suppressed_protein_mismatch",
+        "suppressed_unsupported_pair",
+        "filtered_confidence",
+        "skipped_partial_ec",
+        "unpaired_gene",
+        "unresolved_identity",
+        "invalid_value",
+        "not_applicable"
+      ]
+    },
+    "candidateDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry_type",
+        "candidate_id",
+        "source_id",
+        "source_sha256",
+        "target_feature_uids",
+        "field",
+        "qualifier",
+        "raw_value",
+        "normalized_value",
+        "planned_status",
+        "candidate_role",
+        "evidence_class",
+        "reason_code",
+        "final_status",
+        "insertion_ids",
+        "supporting_candidate_ids",
+        "confidence_diagnostics",
+        "reason"
+      ],
+      "properties": {
+        "entry_type": {"const": "candidate_decision"},
+        "candidate_id": {
+          "type": "string",
+          "pattern": "^candidate:[0-9a-f]{32}$"
+        },
+        "source_id": {"type": "string", "minLength": 1},
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "target_feature_uids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^feature:[0-9a-f]{32}$"
+          }
+        },
+        "field": {"type": "string", "minLength": 1},
+        "qualifier": {"type": "string", "minLength": 1},
+        "raw_value": {"type": "string"},
+        "normalized_value": {"type": "string"},
+        "planned_status": {"type": "string", "minLength": 1},
+        "candidate_role": {"$ref": "#/$defs/role"},
+        "evidence_class": {"type": "string", "minLength": 1},
+        "reason_code": {"type": "string", "minLength": 1},
+        "final_status": {"$ref": "#/$defs/finalStatus"},
+        "insertion_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^insertion:[0-9a-f]{32}$"
+          }
+        },
+        "supporting_candidate_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^candidate:[0-9a-f]{32}$"
+          }
+        },
+        "confidence_diagnostics": {"type": "object"},
+        "reason": {"type": "string"}
+      }
+    }
+  }
+}
