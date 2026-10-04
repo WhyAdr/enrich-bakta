@@ -10,14 +10,37 @@ from dataclasses import field as dataclass_field
 from typing import Any
 
 from enrich_bakta_lib.core.merge_engine import (
+    CANDIDATE_ROLES,
     Insertion,
     MergeError,
     RawDocument,
     cds_by_locus,
     feature_uid,
+    insertion_evidence_class,
+    insertion_role,
     insertion_uid,
     sha256_bytes,
 )
+
+FINAL_STATUSES = frozenset(
+    {
+        "emitted",
+        "shared_support",
+        "supported_existing",
+        "suppressed_conflict",
+        "suppressed_authoritative_gene",
+        "suppressed_protein_mismatch",
+        "suppressed_unsupported_pair",
+        "filtered_confidence",
+        "skipped_partial_ec",
+        "unpaired_gene",
+        "unresolved_identity",
+        "invalid_value",
+        "not_applicable",
+    }
+)
+ACCEPTED_STATUSES = frozenset({"emitted", "shared_support", "supported_existing"})
+EMITTED_STATUSES = frozenset({"emitted", "shared_support"})
 
 
 @dataclass
@@ -31,6 +54,9 @@ class CandidateDecision:
     raw_value: str
     normalized_value: str
     planned_status: str
+    candidate_role: str
+    evidence_class: str
+    reason_code: str
     final_status: str | None = None
     insertion_ids: tuple[str, ...] = ()
     supporting_candidate_ids: tuple[str, ...] = ()
@@ -49,6 +75,9 @@ class CandidateDecision:
             "raw_value": self.raw_value,
             "normalized_value": self.normalized_value,
             "planned_status": self.planned_status,
+            "candidate_role": self.candidate_role,
+            "evidence_class": self.evidence_class,
+            "reason_code": self.reason_code,
             "final_status": self.final_status,
             "insertion_ids": list(self.insertion_ids),
             "supporting_candidate_ids": list(self.supporting_candidate_ids),
@@ -109,7 +138,85 @@ def _semantic_key(insertion: Insertion) -> tuple[str, str, str, str, str]:
 
 
 def _is_provenance_insertion(insertion: Insertion) -> bool:
-    return "provenance" in insertion.source.lower()
+    return insertion_role(insertion) == "producer_provenance"
+
+
+def _row_role(row: Mapping[str, Any], matches: Iterable[Insertion]) -> str:
+    explicit = row.get("candidate_role")
+    if isinstance(explicit, str) and explicit in CANDIDATE_ROLES:
+        return explicit
+    if (
+        row.get("entry_type") == "eggnog_candidate"
+        and row.get("evidence_class") == "feature_note"
+    ):
+        return "substantive_evidence"
+    first = next(iter(matches), None)
+    return insertion_role(first) if first is not None else "functional_proposal"
+
+
+def _row_evidence_class(
+    row: Mapping[str, Any], source_id: str, matches: Iterable[Insertion]
+) -> str:
+    explicit = row.get("support_class")
+    if isinstance(explicit, str) and explicit:
+        return explicit
+    if source_id == "Baktfold":
+        value = row.get("evidence_class")
+        if isinstance(value, str) and value in {"gene", "ec", "structural"}:
+            return value
+    if source_id == "KofamScan":
+        return "ko"
+    if source_id == "eggNOG":
+        return "functional_annotation"
+    first = next(iter(matches), None)
+    return (
+        insertion_evidence_class(first)
+        if first is not None
+        else "functional_annotation"
+    )
+
+
+def _reason_code(
+    row: Mapping[str, Any],
+    *,
+    final_status: str,
+    qualifier: str,
+    source_id: str,
+    gene_conflict_policy: str,
+) -> str:
+    explicit = row.get("reason_code")
+    if isinstance(explicit, str) and explicit:
+        return explicit
+    if final_status == "shared_support":
+        return "shared_support"
+    if final_status == "emitted":
+        return "inserted"
+    if final_status == "supported_existing":
+        return "value_already_present"
+    if final_status == "suppressed_authoritative_gene":
+        return "authoritative_base_name_conflict"
+    if final_status == "suppressed_protein_mismatch":
+        return "protein_identity_mismatch"
+    if final_status == "suppressed_unsupported_pair":
+        return "unsupported_pair"
+    if final_status == "suppressed_conflict" and qualifier == "gene":
+        preferred = {
+            "prefer-eggnog": "eggNOG",
+            "prefer-baktfold": "Baktfold",
+        }.get(gene_conflict_policy)
+        return (
+            "gene_conflict_source_preference"
+            if preferred is not None and source_id != preferred
+            else "gene_conflict_no_preference"
+        )
+    return {
+        "filtered_confidence": "confidence_below_threshold",
+        "skipped_partial_ec": "partial_ec_not_promoted",
+        "unpaired_gene": "unsupported_pair",
+        "unresolved_identity": "unresolved_identity",
+        "invalid_value": "invalid_value",
+        "not_applicable": "not_applicable",
+    }.get(final_status, "not_applicable")
 
 
 def _row_source(row: Mapping[str, Any]) -> str | None:
@@ -153,8 +260,10 @@ def build_candidate_ledger(
     gene_conflict_policy: str = "skip",
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Reconstruct typed planned/final decisions from all adapter plans."""
-    planned = [item for item in planned_insertions if item.qualifier != "COMMENT"]
-    final = [item for item in final_insertions if item.qualifier != "COMMENT"]
+    planned_all = list(planned_insertions)
+    final_all = list(final_insertions)
+    planned = [item for item in planned_all if item.qualifier != "COMMENT"]
+    final = [item for item in final_all if item.qualifier != "COMMENT"]
     index = _feature_index(base)
     final_by_semantic: dict[tuple[str, str, str, str, str], list[str]] = defaultdict(
         list
@@ -191,6 +300,7 @@ def build_candidate_ledger(
     for row in evidence_rows:
         entry_type = str(row.get("entry_type", ""))
         if entry_type not in {
+            "baktfold_candidate",
             "baktfold_invalid",
             "eggnog_candidate",
             "eggnog_pair_conflict",
@@ -254,10 +364,21 @@ def build_candidate_ledger(
         )
         if row_status in {"existing", "existing_gene"}:
             final_status = "supported_existing"
+        elif row_status.startswith("suppressed_"):
+            final_status = row_status
         elif emitted or matches:
             final_status = "emitted" if final_ids else "suppressed_conflict"
         else:
             final_status = row_status or "not_applicable"
+        candidate_role = _row_role(row, matches)
+        evidence_class = _row_evidence_class(row, source_id, matches)
+        reason_code = _reason_code(
+            row,
+            final_status=final_status,
+            qualifier=qualifier,
+            source_id=source_id,
+            gene_conflict_policy=gene_conflict_policy,
+        )
         row["planned_status"] = planned_status
         row["planned_emitted_qualifiers"] = row.get("emitted_qualifiers", "")
         row["final_status"] = final_status
@@ -285,6 +406,9 @@ def build_candidate_ledger(
                 raw_value=raw_value,
                 normalized_value=normalized,
                 planned_status=planned_status,
+                candidate_role=candidate_role,
+                evidence_class=evidence_class,
+                reason_code=reason_code,
                 final_status=final_status,
                 insertion_ids=tuple(final_ids),
                 confidence_diagnostics={
@@ -365,6 +489,19 @@ def build_candidate_ledger(
                 raw_value=raw_value,
                 normalized_value=value,
                 planned_status="planned",
+                candidate_role=insertion_role(items[0]),
+                evidence_class=insertion_evidence_class(items[0]),
+                reason_code=(
+                    "inserted"
+                    if final_ids
+                    else (
+                        "gene_conflict_no_preference"
+                        if qualifier == "gene" and gene_conflict_policy == "skip"
+                        else "gene_conflict_source_preference"
+                        if qualifier == "gene"
+                        else "not_applicable"
+                    )
+                ),
                 final_status=(
                     "emitted"
                     if final_ids
@@ -403,24 +540,25 @@ def build_candidate_ledger(
         candidate.supporting_candidate_ids = tuple(sorted(supporting))
         if supporting and candidate.final_status == "emitted":
             candidate.final_status = "shared_support"
+            candidate.reason_code = "shared_support"
 
-    functional_support: dict[tuple[str, str], set[str]] = defaultdict(set)
+    functional_support: dict[tuple[str, str, str], set[str]] = defaultdict(set)
     for candidate in candidates:
-        if candidate.final_status in {
-            "emitted",
-            "shared_support",
-        } and not candidate.confidence_diagnostics.get("provenance"):
+        if candidate.final_status in ACCEPTED_STATUSES and candidate.candidate_role in {
+            "functional_proposal",
+            "substantive_evidence",
+        }:
             for target_uid in candidate.target_feature_uids:
-                functional_support[(candidate.source_id, target_uid)].add(
-                    candidate.candidate_id
-                )
+                functional_support[
+                    (candidate.source_id, target_uid, candidate.evidence_class)
+                ].add(candidate.candidate_id)
     for candidate in candidates:
-        if candidate.confidence_diagnostics.get("provenance"):
+        if candidate.candidate_role == "producer_provenance":
             supporting = {
                 candidate_id
                 for target_uid in candidate.target_feature_uids
                 for candidate_id in functional_support.get(
-                    (candidate.source_id, target_uid), set()
+                    (candidate.source_id, target_uid, candidate.evidence_class), set()
                 )
             }
             candidate.supporting_candidate_ids = tuple(sorted(supporting))
@@ -430,13 +568,10 @@ def build_candidate_ledger(
     counts = {
         "candidate_count": len(candidates),
         "accepted_candidate_count": sum(
-            candidate.final_status
-            in {"emitted", "shared_support", "supported_existing"}
-            for candidate in candidates
+            candidate.final_status in ACCEPTED_STATUSES for candidate in candidates
         ),
         "emitted_candidate_count": sum(
-            candidate.final_status in {"emitted", "shared_support"}
-            for candidate in candidates
+            candidate.final_status in EMITTED_STATUSES for candidate in candidates
         ),
         "suppressed_candidate_count": sum(
             candidate.final_status == "suppressed_conflict" for candidate in candidates
@@ -446,21 +581,30 @@ def build_candidate_ledger(
             {
                 target_uid
                 for candidate in candidates
-                if candidate.final_status in {"emitted", "shared_support"}
+                if candidate.final_status in EMITTED_STATUSES
                 for target_uid in candidate.target_feature_uids
             }
         ),
-        "candidate_ledger_schema": "enrich-bakta.candidate-ledger.v2",
+        "candidate_ledger_schema": "enrich-bakta.candidate-ledger.v3",
+        "candidate_role_counts": {
+            role: sum(candidate.candidate_role == role for candidate in candidates)
+            for role in sorted(CANDIDATE_ROLES)
+        },
+        "insertion_role_counts": {
+            role: sum(insertion_role(item) == role for item in final_all)
+            for role in sorted(CANDIDATE_ROLES)
+        },
         "functional_candidate_count": sum(
-            not candidate.confidence_diagnostics.get("provenance", False)
+            candidate.candidate_role in {"functional_proposal", "substantive_evidence"}
             for candidate in candidates
         ),
         "provenance_candidate_count": sum(
-            bool(candidate.confidence_diagnostics.get("provenance"))
+            candidate.candidate_role == "producer_provenance"
             for candidate in candidates
         ),
         "functional_insertion_count": sum(
-            not _is_provenance_insertion(item) for item in final
+            insertion_role(item) in {"functional_proposal", "substantive_evidence"}
+            for item in final_all
         ),
         "provenance_insertion_count": sum(
             _is_provenance_insertion(item) for item in final
@@ -474,6 +618,7 @@ def validate_candidate_ledger(
     final_insertions: Iterable[Insertion],
     *,
     base: RawDocument | None = None,
+    output: RawDocument | None = None,
 ) -> None:
     """Check candidate-to-insertion references before artifacts are promoted."""
     final_items = [item for item in final_insertions if item.qualifier != "COMMENT"]
@@ -485,6 +630,11 @@ def validate_candidate_ledger(
         {feature_uid(feature): feature for feature in base.features}
         if base is not None
         else {}
+    )
+    output_feature_by_uid = (
+        {feature_uid(feature): feature for feature in output.features}
+        if output is not None
+        else feature_by_uid
     )
     valid_feature_uids = set(feature_index.values()) if base is not None else None
     ledger_rows = list(rows)
@@ -498,6 +648,27 @@ def validate_candidate_ledger(
             raise MergeError(f"candidate ledger repeats {candidate_id!r}")
         seen.add(candidate_id)
         status = row.get("final_status")
+        if status not in FINAL_STATUSES:
+            raise MergeError(
+                f"candidate {candidate_id!r} has invalid final status {status!r}"
+            )
+        role = row.get("candidate_role")
+        if role is None:
+            role = (
+                "producer_provenance"
+                if row.get("confidence_diagnostics", {}).get("provenance")
+                else "functional_proposal"
+            )
+        if role not in CANDIDATE_ROLES:
+            raise MergeError(
+                f"candidate {candidate_id!r} has invalid candidate role {role!r}"
+            )
+        evidence_class = row.get("evidence_class", "functional_annotation")
+        if not isinstance(evidence_class, str) or not evidence_class:
+            raise MergeError(f"candidate {candidate_id!r} has invalid evidence class")
+        reason_code = row.get("reason_code", "legacy_unspecified")
+        if not isinstance(reason_code, str) or not reason_code:
+            raise MergeError(f"candidate {candidate_id!r} has invalid reason code")
         qualifier = row.get("qualifier")
         normalized_value = row.get("normalized_value")
         if not isinstance(qualifier, str) or not qualifier:
@@ -537,7 +708,7 @@ def validate_candidate_ledger(
             raise MergeError(
                 f"candidate {candidate_id!r} has invalid supporting candidate IDs"
             )
-        if status in {"emitted", "shared_support"}:
+        if status in EMITTED_STATUSES:
             if not referenced:
                 raise MergeError(
                     f"accepted candidate {candidate_id!r} has no insertion support"
@@ -576,11 +747,18 @@ def validate_candidate_ledger(
                     raise MergeError(
                         f"candidate {candidate_id!r} lacks support on every target"
                     )
-        if status == "supported_existing" and base is not None:
+        check_semantic_output = (
+            status == "supported_existing" and bool(output_feature_by_uid)
+        ) or (status in EMITTED_STATUSES and output is not None)
+        if check_semantic_output:
             from enrich_bakta_lib.sources.value_rules import structured_note_tokens
 
             for target in targets:
-                feature = feature_by_uid[target]
+                feature = output_feature_by_uid.get(target)
+                if feature is None:
+                    raise MergeError(
+                        f"candidate {candidate_id!r} target is absent from output"
+                    )
                 values = set(feature.values(qualifier))
                 if qualifier == "db_xref":
                     values.update(
@@ -596,11 +774,11 @@ def validate_candidate_ledger(
                     )
                 if normalized_value not in values:
                     raise MergeError(
-                        f"supported-existing candidate {candidate_id!r} is absent on its target"
+                        f"accepted candidate {candidate_id!r} is absent from the final output"
                     )
-        if status == "suppressed_conflict" and referenced:
+        if status not in EMITTED_STATUSES and referenced:
             raise MergeError(
-                f"suppressed candidate {candidate_id!r} still references insertions"
+                f"non-emitted candidate {candidate_id!r} still references insertions"
             )
 
     by_id = {str(row["candidate_id"]): row for row in ledger_rows}
@@ -613,31 +791,56 @@ def validate_candidate_ledger(
                 )
             if supporting_id == candidate_id:
                 raise MergeError(f"candidate {candidate_id!r} cannot support itself")
+            supporting_row = by_id[supporting_id]
+            if supporting_row.get("final_status") not in ACCEPTED_STATUSES:
+                raise MergeError(
+                    f"candidate {candidate_id!r} references non-accepted support"
+                )
+            row_role = row.get("candidate_role", "functional_proposal")
+            if row_role == "producer_provenance":
+                if (
+                    supporting_row.get("source_id") != row.get("source_id")
+                    or supporting_row.get("evidence_class") != row.get("evidence_class")
+                    or supporting_row.get("candidate_role")
+                    not in {"functional_proposal", "substantive_evidence"}
+                    or not set(supporting_row.get("target_feature_uids", []))
+                    & set(row.get("target_feature_uids", []))
+                ):
+                    raise MergeError(
+                        f"provenance candidate {candidate_id!r} has class-mismatched support"
+                    )
+            elif (
+                supporting_row.get("qualifier") != row.get("qualifier")
+                or supporting_row.get("normalized_value") != row.get("normalized_value")
+                or not set(supporting_row.get("target_feature_uids", []))
+                & set(row.get("target_feature_uids", []))
+            ):
+                raise MergeError(
+                    f"candidate {candidate_id!r} has semantically mismatched support"
+                )
 
     for row in ledger_rows:
-        if row.get("final_status") not in {"emitted", "shared_support"}:
+        if row.get("final_status") not in EMITTED_STATUSES:
             continue
-        provenance_refs = [
-            insertion_by_id[reference]
-            for reference in row.get("insertion_ids", [])
-            if _is_provenance_insertion(insertion_by_id[reference])
-        ]
-        if not provenance_refs:
+        row_role = row.get("candidate_role")
+        if row_role is None and row.get("confidence_diagnostics", {}).get("provenance"):
+            row_role = "producer_provenance"
+        if row_role != "producer_provenance":
             continue
         supporting_rows = [
             by_id[supporting_id]
             for supporting_id in row.get("supporting_candidate_ids", [])
-            if by_id[supporting_id].get("final_status") in {"emitted", "shared_support"}
-            and not by_id[supporting_id]
-            .get("confidence_diagnostics", {})
-            .get("provenance")
+            if by_id[supporting_id].get("final_status") in ACCEPTED_STATUSES
+            and by_id[supporting_id].get("candidate_role", "functional_proposal")
+            in {"functional_proposal", "substantive_evidence"}
             and by_id[supporting_id].get("source_id") == row.get("source_id")
+            and by_id[supporting_id].get("evidence_class") == row.get("evidence_class")
             and set(by_id[supporting_id].get("target_feature_uids", []))
             & set(row.get("target_feature_uids", []))
         ]
         if not supporting_rows:
             raise MergeError(
-                f"provenance candidate {row['candidate_id']!r} has no functional support"
+                f"provenance candidate {row['candidate_id']!r} has no class-specific functional support"
             )
 
     orphaned = set(insertion_by_id) - referenced_final_ids

@@ -9,6 +9,7 @@ from enrich_bakta import enrich
 from enrich_bakta_lib.core.decisions import validate_candidate_ledger
 from enrich_bakta_lib.core.merge_engine import (
     MergeError,
+    feature_uid,
     load_translation_evidence,
     parse_genbank_bytes,
 )
@@ -455,3 +456,216 @@ def test_parent_manifest_hash_uses_the_loaded_snapshot(tmp_path, monkeypatch):
         ]
         == expected
     )
+
+
+def test_baktfold_noop_and_base_conflict_are_exhaustive_decisions(tmp_path):
+    from enrich_bakta_lib.sources.baktfold import graft
+
+    base = write(
+        tmp_path / "base.gbff",
+        record_bytes("TEST", "T_0001", gene="original", ec_numbers=("1.2.3.4",)),
+    )
+    source = write(
+        tmp_path / "source.gbff",
+        record_bytes("TEST", "T_0001", gene="replacement", ec_numbers=("1.2.3.4",)),
+    )
+    manifest = tmp_path / "out.json"
+    graft(
+        base,
+        source,
+        tmp_path / "out.gbff",
+        manifest_path=manifest,
+        add_comment_note=False,
+    )
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    decisions = [row for row in payload["decisions"] if row["source_id"] == "Baktfold"]
+    existing_ec = [
+        row
+        for row in decisions
+        if row["evidence_class"] == "ec" and row["final_status"] == "supported_existing"
+    ]
+    blocked_gene = [
+        row
+        for row in decisions
+        if row["evidence_class"] == "gene"
+        and row["final_status"] == "suppressed_authoritative_gene"
+    ]
+    assert len(existing_ec) == 1
+    assert existing_ec[0]["reason_code"] == "value_already_present"
+    assert len(blocked_gene) == 1
+    assert blocked_gene[0]["reason_code"] == "authoritative_base_name_conflict"
+
+
+def test_baktfold_protein_mismatch_has_per_value_decisions(tmp_path):
+    from enrich_bakta_lib.sources.baktfold import graft
+
+    base = write(tmp_path / "base.gbff", record_bytes("TEST", "T_0001"))
+    source = write(
+        tmp_path / "source.gbff",
+        record_bytes(
+            "TEST",
+            "T_0001",
+            gene="abc",
+            ec_numbers=("1.2.3.4",),
+            db_xrefs=("pdb:1ABC",),
+        ).replace(b'/translation="MK"', b'/translation="MM"'),
+    )
+    manifest = tmp_path / "out.json"
+    graft(
+        base,
+        source,
+        tmp_path / "out.gbff",
+        manifest_path=manifest,
+        add_comment_note=False,
+    )
+    decisions = json.loads(manifest.read_text(encoding="utf-8"))["decisions"]
+    suppressed = [
+        row for row in decisions if row["final_status"] == "suppressed_protein_mismatch"
+    ]
+    assert {row["evidence_class"] for row in suppressed} == {
+        "gene",
+        "ec",
+        "structural",
+    }
+    assert {row["reason_code"] for row in suppressed} == {"protein_identity_mismatch"}
+
+
+def test_baktfold_provenance_links_only_same_evidence_class(tmp_path):
+    from enrich_bakta_lib.sources.baktfold import graft
+
+    base = write(tmp_path / "base.gbff", record_bytes("TEST", "T_0001"))
+    source = write(
+        tmp_path / "source.gbff",
+        record_bytes(
+            "TEST",
+            "T_0001",
+            gene="abc",
+            ec_numbers=("1.2.3.4",),
+            db_xrefs=("pdb:1ABC",),
+        ),
+    )
+    manifest = tmp_path / "out.json"
+    graft(base, source, tmp_path / "out.gbff", manifest_path=manifest)
+    decisions = json.loads(manifest.read_text(encoding="utf-8"))["decisions"]
+    by_id = {row["candidate_id"]: row for row in decisions}
+    provenance = [
+        row for row in decisions if row["candidate_role"] == "producer_provenance"
+    ]
+    assert {row["evidence_class"] for row in provenance} == {
+        "gene",
+        "ec",
+        "structural",
+    }
+    for row in provenance:
+        assert row["supporting_candidate_ids"]
+        assert {
+            by_id[candidate_id]["evidence_class"]
+            for candidate_id in row["supporting_candidate_ids"]
+        } == {row["evidence_class"]}
+
+
+def test_manifest_counts_explicit_candidate_and_insertion_roles(tmp_path):
+    from enrich_bakta_lib.sources.kofam import merge
+
+    base = write(tmp_path / "base.gbff", record_bytes("TEST", "T_0001"))
+    faa = write(tmp_path / "base.faa", b">T_0001\nMK\n")
+    ko = write(tmp_path / "ko.txt", kofam_bytes("* T_0001 K00001 1 2 3e-4 alpha"))
+    manifest = tmp_path / "out.json"
+    merge(base, faa, ko, tmp_path / "out.gbff", manifest_path=manifest)
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    expected_roles = {
+        "context",
+        "functional_proposal",
+        "producer_provenance",
+        "substantive_evidence",
+    }
+    assert set(payload["metadata"]["candidate_role_counts"]) == expected_roles
+    assert set(payload["metadata"]["insertion_role_counts"]) == expected_roles
+    assert {row["candidate_role"] for row in payload["decisions"]} >= {
+        "functional_proposal",
+        "producer_provenance",
+        "substantive_evidence",
+    }
+    assert {
+        row["candidate_role"]
+        for row in payload["entries"]
+        if row["entry_type"] == "insertion"
+    } >= {
+        "context",
+        "functional_proposal",
+        "producer_provenance",
+        "substantive_evidence",
+    }
+
+
+@pytest.mark.parametrize(
+    "status",
+    sorted(
+        {
+            "suppressed_conflict",
+            "suppressed_authoritative_gene",
+            "suppressed_protein_mismatch",
+            "suppressed_unsupported_pair",
+            "filtered_confidence",
+            "skipped_partial_ec",
+            "unpaired_gene",
+            "unresolved_identity",
+            "invalid_value",
+            "not_applicable",
+        }
+    ),
+)
+def test_candidate_validator_accepts_declared_non_emitting_statuses(status):
+    base = parse_genbank_bytes(record_bytes("TEST", "T_0001"))
+    cds = next(feature for feature in base.features if feature.feature_type == "CDS")
+    validate_candidate_ledger(
+        [
+            {
+                "candidate_id": f"candidate:{status}",
+                "source_id": "fixture",
+                "source_sha256": "a" * 64,
+                "target_feature_uids": [feature_uid(cds)],
+                "field": "note",
+                "qualifier": "note",
+                "raw_value": "fixture",
+                "normalized_value": "fixture",
+                "planned_status": status,
+                "candidate_role": "functional_proposal",
+                "evidence_class": "fixture",
+                "reason_code": "fixture_reason",
+                "final_status": status,
+                "insertion_ids": [],
+                "supporting_candidate_ids": [],
+                "confidence_diagnostics": {},
+                "reason": "fixture",
+            }
+        ],
+        [],
+        base=base,
+    )
+
+
+def test_candidate_validator_rejects_unknown_final_status():
+    base = parse_genbank_bytes(record_bytes("TEST", "T_0001"))
+    cds = next(feature for feature in base.features if feature.feature_type == "CDS")
+    row = {
+        "candidate_id": "candidate:invalid-status",
+        "source_id": "fixture",
+        "source_sha256": "a" * 64,
+        "target_feature_uids": [feature_uid(cds)],
+        "field": "note",
+        "qualifier": "note",
+        "raw_value": "fixture",
+        "normalized_value": "fixture",
+        "planned_status": "invented",
+        "candidate_role": "functional_proposal",
+        "evidence_class": "fixture",
+        "reason_code": "fixture_reason",
+        "final_status": "invented",
+        "insertion_ids": [],
+        "supporting_candidate_ids": [],
+        "confidence_diagnostics": {},
+        "reason": "fixture",
+    }
+    with pytest.raises(MergeError, match="invalid final status"):
+        validate_candidate_ledger([row], [], base=base)

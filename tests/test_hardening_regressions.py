@@ -90,6 +90,54 @@ def test_candidate_ledger_rejects_unknown_support_reference() -> None:
         validate_candidate_ledger([row], [insertion], base=base)
 
 
+def test_candidate_ledger_checks_accepted_value_in_parsed_output() -> None:
+    base, insertion, row = _candidate_fixture()
+    with pytest.raises(core.MergeError, match="absent from the final output"):
+        validate_candidate_ledger(
+            [row],
+            [insertion],
+            base=base,
+            output=base,
+        )
+
+
+def test_candidate_ledger_rejects_cross_class_provenance_support() -> None:
+    base, insertion, row = _candidate_fixture()
+    row.update(
+        candidate_role="functional_proposal",
+        evidence_class="ec",
+        reason_code="inserted",
+    )
+    provenance = core.qualifier_insertion(
+        base.data,
+        base.features[2],
+        "inference",
+        "fixture provenance",
+        "fixture provenance",
+        "fixture provenance",
+        1,
+        candidate_role="producer_provenance",
+        evidence_class="gene",
+    )
+    provenance_row = dict(
+        row,
+        candidate_id="candidate:provenance",
+        qualifier="inference",
+        normalized_value="fixture provenance",
+        raw_value="fixture provenance",
+        insertion_ids=[core.insertion_uid(provenance)],
+        supporting_candidate_ids=[row["candidate_id"]],
+        candidate_role="producer_provenance",
+        evidence_class="gene",
+    )
+    with pytest.raises(core.MergeError, match="class-mismatched support"):
+        validate_candidate_ledger(
+            [row, provenance_row],
+            [insertion, provenance],
+            base=base,
+        )
+
+
 def compound(last):
     return record_bytes("TEST", "T_0001").replace(
         b"     CDS             1..9",

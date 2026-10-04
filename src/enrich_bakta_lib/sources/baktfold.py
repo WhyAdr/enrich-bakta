@@ -30,6 +30,7 @@ from enrich_bakta_lib.core.merge_engine import (
     TranslationEvidence,
     cds_by_locus,
     comment_insertion,
+    feature_uid,
     finalize_merge,
     has_translation_evidence_marker,
     index_unique_features,
@@ -98,9 +99,13 @@ def _ec_values(
                 "locus_tag": feature.locus_tag or "",
                 "target_location": feature.location_key,
                 "field": "EC",
+                "qualifier": "EC_number",
                 "raw_value": validation.raw,
                 "normalized_value": validation.normalized or "",
                 "status": "invalid_value",
+                "candidate_role": "functional_proposal",
+                "support_class": "ec",
+                "reason_code": "invalid_value",
                 "validation_status": validation.status,
                 "reason": validation.reason,
                 "emitted_qualifiers": "",
@@ -126,6 +131,53 @@ def _paired_names(document: RawDocument) -> dict[tuple[int, str, str], set[str]]
     return names
 
 
+def _paired_features(
+    document: RawDocument,
+) -> dict[tuple[int, str, str], list[Any]]:
+    features: dict[tuple[int, str, str], list[Any]] = collections.defaultdict(list)
+    for feature in document.features:
+        key = _paired_name_key(feature)
+        if key is not None:
+            features[key].append(feature)
+    return features
+
+
+def _candidate_row(
+    targets: list[Any],
+    *,
+    evidence_class: str,
+    field: str,
+    qualifier: str,
+    raw_value: str,
+    normalized_value: str,
+    status: str,
+    reason_code: str,
+    reason: str = "",
+) -> dict[str, Any]:
+    first = targets[0]
+    return {
+        "entry_type": "baktfold_candidate",
+        "source": "Baktfold",
+        "source_role": "source",
+        "candidate_role": "functional_proposal",
+        "evidence_class": evidence_class,
+        "support_class": evidence_class,
+        "record": first.record_id,
+        "feature_type": first.feature_type,
+        "locus_tag": first.locus_tag or "",
+        "target_location": first.location_key,
+        "target_feature_uids": [feature_uid(target) for target in targets],
+        "field": field,
+        "qualifier": qualifier,
+        "raw_value": raw_value,
+        "normalized_value": normalized_value,
+        "status": status,
+        "reason_code": reason_code,
+        "reason": reason,
+        "emitted_qualifiers": "",
+    }
+
+
 def plan_baktfold_additions(
     base: RawDocument,
     baktfold: RawDocument,
@@ -138,7 +190,7 @@ def plan_baktfold_additions(
     invalid_ec_policy: str = "reject",
     translation_evidence: Mapping[str, TranslationEvidence] | None = None,
     allow_imported_translations: bool = False,
-) -> tuple[list[Insertion], dict[str, Any]]:
+) -> tuple[list[Insertion], list[dict[str, Any]], dict[str, Any]]:
     """Validate Baktfold parity and return the complete insertion allowlist."""
     if invalid_ec_policy not in {"reject", "skip"}:
         raise MergeError(
@@ -170,8 +222,11 @@ def plan_baktfold_additions(
     source_hash = sha256_bytes(baktfold_data)
     base_pair_names = _paired_names(base)
     source_pair_names = _paired_names(baktfold)
+    base_pair_features = _paired_features(base)
     mismatch_loci = set(parity.get("translation_mismatches", []))
     insertions: list[Insertion] = []
+    candidate_rows: list[dict[str, Any]] = []
+    seen_gene_pairs: set[tuple[int, str, str]] = set()
     order = starting_order
     stats: dict[str, Any] = {
         "features_processed": len(base.features),
@@ -215,12 +270,14 @@ def plan_baktfold_additions(
         if source_feature is None:
             continue
         stats["features_matched"] += 1
-        if feature.locus_tag in mismatch_loci and feature.feature_type in {
-            "gene",
-            "CDS",
-        }:
-            stats["translation_mismatch_suppressed_features"] += 1
-            continue
+        protein_mismatch = (
+            feature.locus_tag in mismatch_loci
+            and feature.feature_type
+            in {
+                "gene",
+                "CDS",
+            }
+        )
         additions_by_class: dict[str, list[tuple[str, str, str]]] = {
             "structural": [],
             "ec": [],
@@ -229,8 +286,29 @@ def plan_baktfold_additions(
 
         base_xrefs = set(feature.values("db_xref"))
         source_structural = _structural_xrefs(source_feature.values("db_xref"))
-        for value in sorted(source_structural - base_xrefs):
-            additions_by_class["structural"].append(("db_xref", value, value))
+        for value in sorted(source_structural):
+            if protein_mismatch:
+                status, reason_code = (
+                    "suppressed_protein_mismatch",
+                    "protein_identity_mismatch",
+                )
+            elif value in base_xrefs:
+                status, reason_code = "existing", "value_already_present"
+            else:
+                status, reason_code = "planned", "inserted"
+                additions_by_class["structural"].append(("db_xref", value, value))
+            candidate_rows.append(
+                _candidate_row(
+                    [feature],
+                    evidence_class="structural",
+                    field="structural_xref",
+                    qualifier="db_xref",
+                    raw_value=value,
+                    normalized_value=value,
+                    status=status,
+                    reason_code=reason_code,
+                )
+            )
 
         base_ecs = _ec_values(
             feature,
@@ -244,8 +322,29 @@ def plan_baktfold_additions(
             invalid_policy=invalid_ec_policy,
             invalid_values=stats["invalid_ec_values"],
         )
-        for value in sorted(source_ecs - base_ecs):
-            additions_by_class["ec"].append(("EC_number", value, f"EC:{value}"))
+        for value in sorted(source_ecs):
+            if protein_mismatch:
+                status, reason_code = (
+                    "suppressed_protein_mismatch",
+                    "protein_identity_mismatch",
+                )
+            elif value in base_ecs:
+                status, reason_code = "existing", "value_already_present"
+            else:
+                status, reason_code = "planned", "inserted"
+                additions_by_class["ec"].append(("EC_number", value, f"EC:{value}"))
+            candidate_rows.append(
+                _candidate_row(
+                    [feature],
+                    evidence_class="ec",
+                    field="EC",
+                    qualifier="EC_number",
+                    raw_value=f"EC:{value}",
+                    normalized_value=value,
+                    status=status,
+                    reason_code=reason_code,
+                )
+            )
 
         base_genes = [
             value.strip() for value in feature.values("gene") if value.strip()
@@ -263,10 +362,70 @@ def plan_baktfold_additions(
             source_pair_names.get(pair_key, set()) if pair_key else set()
         )
         pair_name_blocked = len(pair_base_names) > 1 or len(pair_source_names) > 1
-        if not base_genes and len(source_genes) > 1:
-            raise MergeError(
-                f"Baktfold feature {key!r} has ambiguous gene symbols: {source_genes!r}"
+        if pair_key is not None and pair_key not in seen_gene_pairs:
+            seen_gene_pairs.add(pair_key)
+            targets = sorted(
+                base_pair_features.get(pair_key, [feature]),
+                key=lambda item: item.feature_type,
             )
+            proposals = sorted(pair_source_names or set(source_genes))
+            for source_name in proposals:
+                target_gene_values = [
+                    {value.strip() for value in target.values("gene") if value.strip()}
+                    for target in targets
+                ]
+                if protein_mismatch:
+                    status, reason_code, reason = (
+                        "suppressed_protein_mismatch",
+                        "protein_identity_mismatch",
+                        "Baktfold and Bakta protein translations differ",
+                    )
+                elif len(pair_source_names) > 1:
+                    status, reason_code, reason = (
+                        "suppressed_unsupported_pair",
+                        "source_pair_conflict",
+                        "Baktfold paired features contain conflicting gene symbols",
+                    )
+                elif len(pair_base_names) > 1:
+                    status, reason_code, reason = (
+                        "suppressed_unsupported_pair",
+                        "base_pair_conflict",
+                        "Bakta paired features contain conflicting gene symbols",
+                    )
+                elif target_gene_values and all(
+                    values == {source_name} for values in target_gene_values
+                ):
+                    status, reason_code, reason = (
+                        "existing",
+                        "value_already_present",
+                        "",
+                    )
+                elif any(target_gene_values):
+                    status, reason_code, reason = (
+                        "suppressed_authoritative_gene",
+                        "authoritative_base_name_conflict",
+                        "Bakta already carries an authoritative paired gene value",
+                    )
+                else:
+                    status, reason_code, reason = "planned", "inserted", ""
+                candidate_rows.append(
+                    _candidate_row(
+                        targets,
+                        evidence_class="gene",
+                        field="gene",
+                        qualifier="gene",
+                        raw_value=source_name,
+                        normalized_value=source_name,
+                        status=status,
+                        reason_code=reason_code,
+                        reason=reason,
+                    )
+                )
+
+        if protein_mismatch:
+            stats["translation_mismatch_suppressed_features"] += 1
+            continue
+
         if (
             not base_genes
             and not pair_base_names
@@ -296,6 +455,8 @@ def plan_baktfold_additions(
                         "Baktfold",
                         source_value,
                         order,
+                        candidate_role="functional_proposal",
+                        evidence_class=evidence_class,
                     )
                 )
                 order += 1
@@ -333,6 +494,8 @@ def plan_baktfold_additions(
                         "Baktfold provenance",
                         evidence_class,
                         order,
+                        candidate_role="producer_provenance",
+                        evidence_class=evidence_class,
                     )
                 )
                 order += 1
@@ -363,7 +526,7 @@ def plan_baktfold_additions(
 
     stats["planned_insertions"] = len(insertions)
     stats["invalid_ec_value_count"] = len(stats["invalid_ec_values"])
-    return insertions, stats
+    return insertions, candidate_rows, stats
 
 
 def graft(
@@ -390,7 +553,7 @@ def graft(
         else None
     )
     source = parse_genbank_bytes(baktfold_data, "Baktfold input")
-    insertions, stats = plan_baktfold_additions(
+    insertions, candidate_rows, stats = plan_baktfold_additions(
         base,
         source,
         baktfold_data=baktfold_data,
@@ -405,7 +568,7 @@ def graft(
         base,
         insertions,
         insertions,
-        stats["invalid_ec_values"],
+        [*stats["invalid_ec_values"], *candidate_rows],
         source_hashes={"Baktfold": stats["baktfold_sha256"]},
     )
     stats.update(candidate_counts)

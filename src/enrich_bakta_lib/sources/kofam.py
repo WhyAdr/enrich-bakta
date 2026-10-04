@@ -225,7 +225,15 @@ def plan_kofam_additions(
         if not already_present and xref not in xref_values:
             insertions.append(
                 qualifier_insertion(
-                    base.data, feature, "db_xref", xref, "KofamScan", hit.ko, order
+                    base.data,
+                    feature,
+                    "db_xref",
+                    xref,
+                    "KofamScan",
+                    hit.ko,
+                    order,
+                    candidate_role="functional_proposal",
+                    evidence_class="ko",
                 )
             )
             order += 1
@@ -247,6 +255,8 @@ def plan_kofam_additions(
                     "KofamScan hit evidence",
                     f"row {hit.row_number}",
                     order,
+                    candidate_role="substantive_evidence",
+                    evidence_class="ko",
                 )
             )
             order += 1
@@ -268,6 +278,8 @@ def plan_kofam_additions(
                     "KofamScan provenance",
                     kofamscan_version or "unspecified version",
                     order,
+                    candidate_role="producer_provenance",
+                    evidence_class="ko",
                 )
             )
             order += 1
@@ -289,6 +301,11 @@ def plan_kofam_additions(
                 "definition": hit.definition,
                 "ko_already_present": already_present,
                 "status": "existing" if already_present else "planned",
+                "candidate_role": "functional_proposal",
+                "support_class": "ko",
+                "reason_code": (
+                    "value_already_present" if already_present else "inserted"
+                ),
                 "emitted_qualifiers": " | ".join(emitted),
                 "kofam_row": hit.row_number,
             }
@@ -370,6 +387,7 @@ def merge(
     hits = parse_kofam_table(kofam_data)
 
     insertions: list[Insertion] = []
+    evidence_rows: list[dict[str, Any]] = []
     combined_stats: dict[str, Any] = {}
     other_inputs = [faa_path, kofam_path]
     if translation_evidence_manifest is not None:
@@ -378,7 +396,11 @@ def merge(
         baktfold_data = read_input_bytes(baktfold_path, "Baktfold")
         validate_genbank_semantics(baktfold_data, "Baktfold input")
         baktfold = parse_genbank_bytes(baktfold_data, "Baktfold input")
-        baktfold_insertions, baktfold_stats = plan_baktfold_additions(
+        (
+            baktfold_insertions,
+            baktfold_candidates,
+            baktfold_stats,
+        ) = plan_baktfold_additions(
             base,
             baktfold,
             baktfold_data=baktfold_data,
@@ -390,11 +412,12 @@ def merge(
             allow_imported_translations=allow_imported_translations,
         )
         insertions.extend(baktfold_insertions)
+        evidence_rows.extend(baktfold_candidates)
         combined_stats["baktfold"] = baktfold_stats
         other_inputs.append(baktfold_path)
 
     next_order = max((insertion.order for insertion in insertions), default=-1) + 1
-    kofam_insertions, evidence_rows, kofam_stats = plan_kofam_additions(
+    kofam_insertions, kofam_evidence_rows, kofam_stats = plan_kofam_additions(
         base,
         proteins,
         hits,
@@ -409,6 +432,7 @@ def merge(
         allow_imported_translations=allow_imported_translations,
     )
     insertions.extend(kofam_insertions)
+    evidence_rows.extend(kofam_evidence_rows)
     planned_insertions = list(insertions)
     insertions, reconciliation_rows, reconciliation = reconcile_insertions(insertions)
     evidence_rows.extend(

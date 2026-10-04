@@ -148,7 +148,7 @@ def test_baktfold_exact_prefixes_blank_gene_and_separate_provenance(
     assert stats["self_check"] is True
 
 
-def test_baktfold_rejects_ambiguous_gene_and_writes_nothing(tmp_path: Path) -> None:
+def test_baktfold_records_ambiguous_gene_as_unsupported_pair(tmp_path: Path) -> None:
     base = record_bytes("TEST", "T_0001")
     source = record_bytes("TEST", "T_0001", gene="abc").replace(
         b'/gene="abc"', b'/gene="abc"\n                     /gene="xyz"', 1
@@ -156,9 +156,21 @@ def test_baktfold_rejects_ambiguous_gene_and_writes_nothing(tmp_path: Path) -> N
     base_path = write(tmp_path / "base.gbff", base)
     source_path = write(tmp_path / "source.gbff", source)
     output = tmp_path / "out.gbff"
-    with pytest.raises(MergeError, match="ambiguous gene symbols"):
-        graft(base_path, source_path, output, add_comment_note=False)
-    assert not output.exists()
+    manifest = tmp_path / "out.json"
+    graft(
+        base_path,
+        source_path,
+        output,
+        manifest_path=manifest,
+        add_comment_note=False,
+    )
+    assert output.read_bytes() == base
+    decisions = json.loads(manifest.read_text(encoding="utf-8"))["decisions"]
+    unsupported = [
+        row for row in decisions if row["final_status"] == "suppressed_unsupported_pair"
+    ]
+    assert {row["normalized_value"] for row in unsupported} == {"abc", "xyz"}
+    assert {row["reason_code"] for row in unsupported} == {"source_pair_conflict"}
 
 
 def test_baktfold_invalid_ec_values_are_explicitly_skipped(tmp_path: Path) -> None:

@@ -115,7 +115,7 @@ def enrich(
         data = read_input_bytes(baktfold_path, "Baktfold")
         validate_genbank_semantics(data, "Baktfold input")
         source = parse_genbank_bytes(data, "Baktfold input")
-        planned, stats = plan_baktfold_additions(
+        planned, baktfold_candidates, stats = plan_baktfold_additions(
             base,
             source,
             baktfold_data=data,
@@ -128,6 +128,7 @@ def enrich(
             allow_imported_translations=allow_imported_translations,
         )
         insertions.extend(planned)
+        evidence_rows.extend(baktfold_candidates)
         evidence_rows.extend(stats.get("invalid_ec_values", []))
         metadata["baktfold_sha256"] = stats["baktfold_sha256"]
         metadata["baktfold_parity"] = stats["parity"]

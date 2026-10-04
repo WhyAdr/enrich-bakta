@@ -32,6 +32,16 @@ class MergeError(ValueError):
     """Raised when an input cannot be merged safely."""
 
 
+CANDIDATE_ROLES = frozenset(
+    {
+        "functional_proposal",
+        "substantive_evidence",
+        "producer_provenance",
+        "context",
+    }
+)
+
+
 @dataclass
 class RawFeature:
     record_index: int
@@ -104,6 +114,8 @@ class Insertion:
     source: str
     source_value: str
     order: int = 0
+    candidate_role: str = ""
+    evidence_class: str = ""
 
 
 @dataclass
@@ -154,6 +166,8 @@ def insertion_uid(insertion: Insertion) -> str:
             "source": insertion.source,
             "source_value": insertion.source_value,
             "order": insertion.order,
+            "candidate_role": insertion_role(insertion),
+            "evidence_class": insertion_evidence_class(insertion),
             "payload_sha256": sha256_bytes(insertion.payload),
         },
         ensure_ascii=False,
@@ -161,6 +175,52 @@ def insertion_uid(insertion: Insertion) -> str:
         sort_keys=True,
     ).encode("utf-8")
     return f"insertion:{sha256_bytes(payload)[:32]}"
+
+
+def insertion_role(insertion: Insertion) -> str:
+    """Return the explicit semantic role of an insertion."""
+    if insertion.candidate_role:
+        if insertion.candidate_role not in CANDIDATE_ROLES:
+            raise MergeError(
+                f"insertion has unsupported candidate role {insertion.candidate_role!r}"
+            )
+        return insertion.candidate_role
+    if insertion.qualifier == "COMMENT":
+        return "context"
+    if insertion.source in {
+        "Baktfold provenance",
+        "KofamScan provenance",
+        "eggNOG provenance",
+    }:
+        return "producer_provenance"
+    if insertion.source == "KofamScan hit evidence":
+        return "substantive_evidence"
+    return "functional_proposal"
+
+
+def insertion_evidence_class(insertion: Insertion) -> str:
+    """Return the evidence class used for support-link reconciliation."""
+    if insertion.evidence_class:
+        return insertion.evidence_class
+    if insertion.qualifier == "COMMENT":
+        return "context"
+    if insertion.source.startswith("KofamScan"):
+        return "ko"
+    if insertion.source.startswith("eggNOG"):
+        return "functional_annotation"
+    if insertion.source.startswith("Baktfold"):
+        if insertion.source == "Baktfold provenance" and insertion.source_value in {
+            "gene",
+            "ec",
+            "structural",
+        }:
+            return insertion.source_value
+        return {
+            "gene": "gene",
+            "EC_number": "ec",
+            "db_xref": "structural",
+        }.get(insertion.qualifier, "functional_annotation")
+    return "functional_annotation"
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -953,6 +1013,9 @@ def qualifier_insertion(
     source: str,
     source_value: str,
     order: int,
+    *,
+    candidate_role: str = "",
+    evidence_class: str = "",
 ) -> Insertion:
     newline = newline_for_offset(base_data, feature.end)
     return Insertion(
@@ -966,6 +1029,8 @@ def qualifier_insertion(
         source=source,
         source_value=source_value,
         order=order,
+        candidate_role=candidate_role,
+        evidence_class=evidence_class,
     )
 
 
@@ -1015,6 +1080,8 @@ def comment_insertion(
         source=source,
         source_value=" | ".join(lines),
         order=order,
+        candidate_role="context",
+        evidence_class="context",
     )
 
 
@@ -1157,6 +1224,8 @@ def insertion_rows(applied: list[AppliedInsertion]) -> list[dict[str, Any]]:
         insertion = item.insertion
         row = asdict(insertion)
         row.pop("payload")
+        row["candidate_role"] = insertion_role(insertion)
+        row["evidence_class"] = insertion_evidence_class(insertion)
         row["insertion_id"] = insertion_uid(insertion)
         row["entry_type"] = "insertion"
         row["base_offset"] = row.pop("offset")
@@ -1164,10 +1233,6 @@ def insertion_rows(applied: list[AppliedInsertion]) -> list[dict[str, Any]]:
         row["emitted_sha256"] = sha256_bytes(insertion.payload)
         rows.append(row)
     return rows
-
-
-def _is_provenance_source(source: str) -> bool:
-    return "provenance" in source.lower()
 
 
 def reconcile_insertions(
@@ -1209,44 +1274,43 @@ def reconcile_insertions(
             continue
         filtered.append(item)
 
-    def source_family(source: str) -> str:
-        return source.lower().removesuffix(" provenance").removesuffix(" hit evidence")
+    def source_family(item: Insertion) -> str:
+        if item.source.startswith("Baktfold"):
+            return "baktfold"
+        if item.source.startswith("KofamScan"):
+            return "kofamscan"
+        if item.source.startswith("eggNOG"):
+            return "eggnog"
+        return item.source.lower()
 
     surviving_functional = {
         (
             item.record,
             item.locus_tag,
-            source_family(item.source),
+            source_family(item),
         )
         for item in filtered
-        if item.qualifier != "COMMENT" and not _is_provenance_source(item.source)
+        if insertion_role(item) in {"functional_proposal", "substantive_evidence"}
     }
     provenance_filtered: list[Insertion] = []
     for item in filtered:
         if item.source == "Baktfold provenance" and item.qualifier != "COMMENT":
-            evidence_qualifier = (
-                "gene"
-                if item.value.startswith("Baktfold gene-symbol evidence:")
-                else "EC_number"
-                if item.value.startswith("Baktfold functional-annotation evidence:")
-                else "db_xref"
-            )
             if not any(
                 other.source == "Baktfold"
                 and other.record == item.record
                 and other.locus_tag == item.locus_tag
                 and other.feature_type == item.feature_type
-                and other.qualifier == evidence_qualifier
+                and insertion_evidence_class(other) == insertion_evidence_class(item)
                 for other in filtered
             ):
                 continue
         if (
             item.qualifier != "COMMENT"
-            and _is_provenance_source(item.source)
+            and insertion_role(item) == "producer_provenance"
             and (
                 item.record,
                 item.locus_tag,
-                source_family(item.source),
+                source_family(item),
             )
             not in surviving_functional
         ):
@@ -1554,6 +1618,21 @@ def finalize_merge(
     verify_insertion_semantics(
         parse_genbank_bytes(base_data, "Bakta input"), parsed_output, applied
     )
+    if evidence_rows is not None:
+        candidate_rows = [
+            row
+            for row in evidence_rows
+            if row.get("entry_type") == "candidate_decision"
+        ]
+        if candidate_rows:
+            from enrich_bakta_lib.core.decisions import validate_candidate_ledger
+
+            validate_candidate_ledger(
+                candidate_rows,
+                insertions,
+                base=parse_genbank_bytes(base_data, "Bakta input"),
+                output=parsed_output,
+            )
     output_sha256 = sha256_bytes(merged)
     metadata = _bind_metadata_translation_evidence(
         {

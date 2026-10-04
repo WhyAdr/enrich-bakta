@@ -753,6 +753,9 @@ def plan_eggnog_additions(
                     "normalized_value": partial,
                     "confidence_code": hit.confidence[CONFIDENCE_FIELD_INDEX["EC"]],
                     "status": "skipped_partial_ec",
+                    "candidate_role": "functional_proposal",
+                    "support_class": "functional_annotation",
+                    "reason_code": "partial_ec_not_promoted",
                     "emitted_qualifiers": "",
                     "seed_ortholog": hit.seed_ortholog,
                     "e_value": hit.evalue,
@@ -793,6 +796,9 @@ def plan_eggnog_additions(
                     "source_token": hit.preferred_name,
                     "normalized_value": preferred_name,
                     "status": "unresolved_identity",
+                    "candidate_role": "functional_proposal",
+                    "support_class": "functional_annotation",
+                    "reason_code": "unresolved_identity",
                     "reason": (
                         "authoritative gene names disagree across the paired "
                         f"features: feature={feature_genes!r}, pair={paired_genes!r}"
@@ -826,6 +832,9 @@ def plan_eggnog_additions(
                         CONFIDENCE_FIELD_INDEX["Preferred_name"]
                     ],
                     "status": "invalid_value",
+                    "candidate_role": "functional_proposal",
+                    "support_class": "functional_annotation",
+                    "reason_code": "invalid_value",
                     "reason": "preferred name is empty after normalization",
                     "emitted_qualifiers": "",
                     "seed_ortholog": hit.seed_ortholog,
@@ -902,6 +911,8 @@ def plan_eggnog_additions(
                                 "eggNOG",
                                 raw_value,
                                 order,
+                                candidate_role="functional_proposal",
+                                evidence_class="functional_annotation",
                             )
                         )
                         order += 1
@@ -915,7 +926,19 @@ def plan_eggnog_additions(
             else:
                 insertions.append(
                     qualifier_insertion(
-                        base.data, feature, qualifier, value, "eggNOG", raw_value, order
+                        base.data,
+                        feature,
+                        qualifier,
+                        value,
+                        "eggNOG",
+                        raw_value,
+                        order,
+                        candidate_role=(
+                            "substantive_evidence"
+                            if field in FEATURE_NOTE_FIELDS
+                            else "functional_proposal"
+                        ),
+                        evidence_class="functional_annotation",
                     )
                 )
                 order += 1
@@ -952,6 +975,21 @@ def plan_eggnog_additions(
                     if confidence_index is None
                     else hit.confidence[confidence_index],
                     "status": status,
+                    "candidate_role": (
+                        "substantive_evidence"
+                        if field in FEATURE_NOTE_FIELDS
+                        else "functional_proposal"
+                    ),
+                    "support_class": "functional_annotation",
+                    "reason_code": {
+                        "existing": "value_already_present",
+                        "existing_gene": "value_already_present",
+                        "filtered_confidence": "confidence_below_threshold",
+                        "unresolved_identity": "unresolved_identity",
+                        "suppressed_authoritative_gene": "authoritative_base_name_conflict",
+                        "unpaired_gene": "unsupported_pair",
+                        "emitted": "inserted",
+                    }.get(status, "not_applicable"),
                     "emitted_qualifiers": " | ".join(emitted),
                     "seed_ortholog": hit.seed_ortholog,
                     "e_value": hit.evalue,
@@ -979,6 +1017,8 @@ def plan_eggnog_additions(
                         "eggNOG provenance",
                         hit.seed_ortholog,
                         order,
+                        candidate_role="producer_provenance",
+                        evidence_class="functional_annotation",
                     )
                 )
                 order += 1
