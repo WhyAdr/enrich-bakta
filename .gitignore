@@ -26,6 +26,8 @@ __pycache__/
 !/data/C14/evidence/*-query.emapper.hits
 !/data/C14/evidence/*-query.emapper.seed_orthologs
 !/data/C14/evidence/*-query.emapper.seed_orthologs.sorted
+!/data/C14/evidence/interproscan/
+!/data/C14/evidence/interproscan/*
 !/data/C14/derived/
 !/data/C14/derived/restored/
 !/data/C14/derived/restored/*.gbff
@@ -49,6 +51,8 @@ __pycache__/
 !/data/SM/evidence/*-query.emapper.hits
 !/data/SM/evidence/*-query.emapper.seed_orthologs
 !/data/SM/evidence/*-query.emapper.seed_orthologs.sorted
+!/data/SM/evidence/interproscan/
+!/data/SM/evidence/interproscan/*
 !/data/SM/derived/
 !/data/SM/derived/restored/
 !/data/SM/derived/restored/*.gbff
@@ -62,6 +66,9 @@ __pycache__/
 !/data/BK71A/derived/
 !/data/BK71A/derived/restored/
 !/data/BK71A/derived/restored/*.gbff
+!/data/BK71A/evidence/
+!/data/BK71A/evidence/interproscan/
+!/data/BK71A/evidence/interproscan/*
 
 # Retained local build/test caches
 /.cache/

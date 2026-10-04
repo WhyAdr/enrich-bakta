@@ -6,7 +6,7 @@ The repository-local layout is:
 data/
   C14/{bakta,baktfold,evidence,derived/{restored,enriched}}
   SM/{bakta,baktfold,evidence,derived/{restored,enriched}}
-  BK71A/derived/restored/
+  BK71A/{evidence,derived/restored}
   fixtures/
 ```
 
@@ -49,6 +49,11 @@ grammar and are never promoted by default; historical reruns may pass
 `--baktfold-invalid-ec-policy skip` to record them as explicit
 `invalid_value` decisions. This does not broaden the grammar or validate the
 underlying database assignment.
+
+The `evidence/interproscan/` directories contain InterProScan 5.59-91.0
+TSV, JSON, and GFF3 exports supplied for C14, SM, and BK71A. They remain
+`historical_unverified`; in particular, BK71A has no separately preserved
+pristine protein input in this checkout from which to confirm lineage.
 
 Large biological inputs remain ignored by default. The curated owner-authorized
 bundle uses Git LFS; a clean clone must materialize the LFS bytes and pass the

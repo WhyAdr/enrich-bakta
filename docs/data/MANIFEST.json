@@ -25,6 +25,84 @@
       }
     },
     {
+      "id": "artifact-data-bk71a-evidence-interproscan-bk71a-interproscan-gff3",
+      "path": "data/BK71A/evidence/interproscan/BK71A.interproscan.gff3",
+      "sample": "BK71A",
+      "role": "functional_evidence",
+      "size_bytes": 147670717,
+      "sha256": "a827963602a2143747b7313b300c850fcaf1bfc967de09564a95afb9953e859a",
+      "lineage": [],
+      "producer": {
+        "database": "InterPro and bundled member databases",
+        "name": "InterProScan",
+        "version": "5.59-91.0"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [
+          "format-boundary-checked",
+          "interproscan-version-5.59-91.0"
+        ],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-bk71a-evidence-interproscan-bk71a-interproscan-json",
+      "path": "data/BK71A/evidence/interproscan/BK71A.interproscan.json",
+      "sample": "BK71A",
+      "role": "functional_evidence",
+      "size_bytes": 823138682,
+      "sha256": "7b6805fc2b00def04c2ddced9471bf6ed16ea34683d426adc06bc55bb3b9282c",
+      "lineage": [],
+      "producer": {
+        "database": "InterPro and bundled member databases",
+        "name": "InterProScan",
+        "version": "5.59-91.0"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [
+          "format-boundary-checked",
+          "interproscan-version-5.59-91.0"
+        ],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-bk71a-evidence-interproscan-bk71a-interproscan-tsv",
+      "path": "data/BK71A/evidence/interproscan/BK71A.interproscan.tsv",
+      "sample": "BK71A",
+      "role": "functional_evidence",
+      "size_bytes": 131729054,
+      "sha256": "0b44aab2a511ebec53f1fd78ae004674ad060c3acb44a2a31864bdbfd974aa21",
+      "lineage": [],
+      "producer": {
+        "database": "InterPro and bundled member databases",
+        "name": "InterProScan",
+        "version": "5.59-91.0"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [
+          "format-boundary-checked",
+          "interproscan-version-5.59-91.0"
+        ],
+        "code_commit": null
+      }
+    },
+    {
       "id": "artifact-data-c14-bakta-c14-nmz-embl",
       "path": "data/C14/bakta/C14-NMZ.embl",
       "sample": "C14",
@@ -1039,6 +1117,90 @@
       }
     },
     {
+      "id": "artifact-data-c14-evidence-interproscan-c14-nmz-interproscan-gff3",
+      "path": "data/C14/evidence/interproscan/C14-NMZ.interproscan.gff3",
+      "sample": "C14",
+      "role": "functional_evidence",
+      "size_bytes": 176427419,
+      "sha256": "8c3fc56a24c208a8fd3cb720f30e8c5d8e2533b0419806935e6f20a51a773a56",
+      "lineage": [
+        "artifact-data-c14-bakta-c14-nmz-faa"
+      ],
+      "producer": {
+        "database": "InterPro and bundled member databases",
+        "name": "InterProScan",
+        "version": "5.59-91.0"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [
+          "format-boundary-checked",
+          "interproscan-version-5.59-91.0"
+        ],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-evidence-interproscan-c14-nmz-interproscan-json",
+      "path": "data/C14/evidence/interproscan/C14-NMZ.interproscan.json",
+      "sample": "C14",
+      "role": "functional_evidence",
+      "size_bytes": 997020038,
+      "sha256": "cc992aa4a648490610ea83d7276ea054031f91270485220f8dfef38ca4891d69",
+      "lineage": [
+        "artifact-data-c14-bakta-c14-nmz-faa"
+      ],
+      "producer": {
+        "database": "InterPro and bundled member databases",
+        "name": "InterProScan",
+        "version": "5.59-91.0"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [
+          "format-boundary-checked",
+          "interproscan-version-5.59-91.0"
+        ],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-c14-evidence-interproscan-c14-nmz-interproscan-tsv",
+      "path": "data/C14/evidence/interproscan/C14-NMZ.interproscan.tsv",
+      "sample": "C14",
+      "role": "functional_evidence",
+      "size_bytes": 157031166,
+      "sha256": "5de249ac97ed468bdae75c5ab483d91f5d2f613e7dbbc2e922ee263ec441ac6b",
+      "lineage": [
+        "artifact-data-c14-bakta-c14-nmz-faa"
+      ],
+      "producer": {
+        "database": "InterPro and bundled member databases",
+        "name": "InterProScan",
+        "version": "5.59-91.0"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [
+          "format-boundary-checked",
+          "interproscan-version-5.59-91.0"
+        ],
+        "code_commit": null
+      }
+    },
+    {
       "id": "artifact-data-sm-bakta-sm-nmz-embl",
       "path": "data/SM/bakta/SM-NMZ.embl",
       "sample": "SM",
@@ -2049,6 +2211,90 @@
       },
       "validation": {
         "checks": [],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-evidence-interproscan-sm-nmz-interproscan-gff3",
+      "path": "data/SM/evidence/interproscan/SM-NMZ.interproscan.gff3",
+      "sample": "SM",
+      "role": "functional_evidence",
+      "size_bytes": 172655728,
+      "sha256": "9cfb5bc785c48f14bcb38e748e79b37c66c5107af07efacd19775471cd6b7f67",
+      "lineage": [
+        "artifact-data-sm-bakta-sm-nmz-faa"
+      ],
+      "producer": {
+        "database": "InterPro and bundled member databases",
+        "name": "InterProScan",
+        "version": "5.59-91.0"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [
+          "format-boundary-checked",
+          "interproscan-version-5.59-91.0"
+        ],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-evidence-interproscan-sm-nmz-interproscan-json",
+      "path": "data/SM/evidence/interproscan/SM-NMZ.interproscan.json",
+      "sample": "SM",
+      "role": "functional_evidence",
+      "size_bytes": 976373653,
+      "sha256": "6df5770d87204131b42b24f8bb9f0726e9662518e21a78da4b75e5edb8cf2bd2",
+      "lineage": [
+        "artifact-data-sm-bakta-sm-nmz-faa"
+      ],
+      "producer": {
+        "database": "InterPro and bundled member databases",
+        "name": "InterProScan",
+        "version": "5.59-91.0"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [
+          "format-boundary-checked",
+          "interproscan-version-5.59-91.0"
+        ],
+        "code_commit": null
+      }
+    },
+    {
+      "id": "artifact-data-sm-evidence-interproscan-sm-nmz-interproscan-tsv",
+      "path": "data/SM/evidence/interproscan/SM-NMZ.interproscan.tsv",
+      "sample": "SM",
+      "role": "functional_evidence",
+      "size_bytes": 153607485,
+      "sha256": "3cb5f0e8b6723faae26f450c4cc288526452cd8e9483e7aa0920029f2d3f29fe",
+      "lineage": [
+        "artifact-data-sm-bakta-sm-nmz-faa"
+      ],
+      "producer": {
+        "database": "InterPro and bundled member databases",
+        "name": "InterProScan",
+        "version": "5.59-91.0"
+      },
+      "status": "historical_unverified",
+      "redistribution": {
+        "license": "unverified",
+        "permission": "unverified"
+      },
+      "validation": {
+        "checks": [
+          "format-boundary-checked",
+          "interproscan-version-5.59-91.0"
+        ],
         "code_commit": null
       }
     }

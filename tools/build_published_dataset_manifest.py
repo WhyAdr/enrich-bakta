@@ -19,6 +19,7 @@ CURATED_PATTERNS = (
     "data/C14/evidence/*-KofamKOALA.txt",
     "data/C14/evidence/*-emapper_annotations.xlsx",
     "data/C14/evidence/*-query.emapper.*",
+    "data/C14/evidence/interproscan/*",
     "data/C14/derived/restored/*.gbff",
     "data/C14/derived/restored/*.manifest.json",
     "data/C14/derived/enriched/*.gbff",
@@ -30,11 +31,13 @@ CURATED_PATTERNS = (
     "data/SM/evidence/*-KofamKOALA.txt",
     "data/SM/evidence/*-emapper_annotations.xlsx",
     "data/SM/evidence/*-query.emapper.*",
+    "data/SM/evidence/interproscan/*",
     "data/SM/derived/restored/*.gbff",
     "data/SM/derived/restored/*.manifest.json",
     "data/SM/derived/enriched/*.gbff",
     "data/SM/derived/enriched/*.manifest.json",
     "data/BK71A/derived/restored/BK71A-restored.gbff",
+    "data/BK71A/evidence/interproscan/*",
 )
 
 
@@ -80,7 +83,7 @@ def build(input_path: Path, output_path: Path) -> None:
             "license": "CC-BY-4.0",
             "storage": "git-lfs",
             "status_policy": "historical_unverified until producer metadata and lineage are independently confirmed",
-            "owner_authorization": "2026-10-03",
+            "owner_authorization": "2026-10-04",
         },
         "artifacts": selected,
     }
