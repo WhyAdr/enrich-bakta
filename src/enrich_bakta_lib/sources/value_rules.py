@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from enrich_bakta_lib.core.merge_engine import MergeError
@@ -170,3 +171,100 @@ def structured_tokens_in_text(value: str) -> tuple[str, ...]:
             if STRUCTURED_TOKEN_RE.fullmatch(token)
         )
     )
+
+
+# Grammars for member databases and functional accessions
+PFAM_MEMBER_RE = re.compile(r"PFAM:(PF\d{5})(?:\.([1-9]\d*))?\Z")
+TIGRFAM_MEMBER_RE = re.compile(r"TIGRFAM:(TIGR\d{5})(?:\.([1-9]\d*))?\Z")
+INTERPRO_ACCESSION_RE = re.compile(r"IPR\d{6}\Z")
+GO_TERM_RE = re.compile(r"GO:\d{7}\Z")
+PFAM_ACCESSION_RE = re.compile(r"(PF\d{5})(?:\.([1-9]\d*))?\Z")
+TIGRFAM_ACCESSION_RE = re.compile(r"(TIGR\d{5})(?:\.([1-9]\d*))?\Z")
+
+
+@dataclass(frozen=True)
+class MemberNoteMatch:
+    """Parsed affirmative standalone member database note."""
+
+    db: str
+    accession: str
+    version: str | None
+    canonical_note: str
+    raw_note: str
+
+
+def parse_standalone_member_note(note: str) -> MemberNoteMatch | None:
+    """Parse an affirmative standalone PFAM or TIGRFAM note.
+
+    Rejects prefix collisions, negative/free-text mentions, composite notes,
+    and malformed versions.
+    """
+    value = note.strip()
+    pfam_match = PFAM_MEMBER_RE.fullmatch(value)
+    if pfam_match:
+        accession = pfam_match.group(1)
+        version = pfam_match.group(2)
+        return MemberNoteMatch(
+            db="Pfam",
+            accession=accession,
+            version=version,
+            canonical_note=f"PFAM:{accession}",
+            raw_note=value,
+        )
+    tigrfam_match = TIGRFAM_MEMBER_RE.fullmatch(value)
+    if tigrfam_match:
+        accession = tigrfam_match.group(1)
+        version = tigrfam_match.group(2)
+        return MemberNoteMatch(
+            db="TIGRFAM",
+            accession=accession,
+            version=version,
+            canonical_note=f"TIGRFAM:{accession}",
+            raw_note=value,
+        )
+    return None
+
+
+def find_member_note_witness(
+    feature_notes: Iterable[str], canonical_value: str
+) -> str | None:
+    """Search feature notes for an affirmative member note matching canonical_value.
+
+    Returns the actual raw note string (the witness, e.g. 'PFAM:PF00005.33')
+    if an affirmative match is found, or None.
+    """
+    for note in feature_notes:
+        match = parse_standalone_member_note(note)
+        if match is not None and match.canonical_note == canonical_value:
+            return match.raw_note
+    return None
+
+
+def validate_interpro_accession(value: str) -> str | None:
+    """Validate full-match IPRdddddd accession."""
+    candidate = value.strip()
+    return candidate if INTERPRO_ACCESSION_RE.fullmatch(candidate) else None
+
+
+def validate_go_term(value: str) -> str | None:
+    """Validate full-match bare GO:ddddddd token."""
+    candidate = value.strip()
+    return candidate if GO_TERM_RE.fullmatch(candidate) else None
+
+
+def validate_pfam_accession(value: str) -> tuple[str, str | None] | None:
+    """Validate full-match PFddddd accession with optional positive numeric version."""
+    candidate = value.strip()
+    match = PFAM_ACCESSION_RE.fullmatch(candidate)
+    if not match:
+        return None
+    return match.group(1), match.group(2)
+
+
+def validate_tigrfam_accession(value: str) -> tuple[str, str | None] | None:
+    """Validate full-match TIGRddddd accession with optional positive numeric version."""
+    candidate = value.strip()
+    match = TIGRFAM_ACCESSION_RE.fullmatch(candidate)
+    if not match:
+        return None
+    return match.group(1), match.group(2)

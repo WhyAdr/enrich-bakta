@@ -96,6 +96,11 @@ def stable_id(prefix: str, payload: Mapping[str, Any]) -> str:
     return f"{prefix}:{sha256_bytes(encoded)[:32]}"
 
 
+INTERPROSCAN_FUNCTIONAL_CLASSES = frozenset(
+    {"InterPro", "GO", "member:Pfam", "member:TIGRFAM"}
+)
+
+
 def _source_id(value: str) -> str:
     lowered = value.lower()
     if lowered.startswith("baktfold"):
@@ -104,6 +109,8 @@ def _source_id(value: str) -> str:
         return "KofamScan"
     if lowered.startswith("eggnog"):
         return "eggNOG"
+    if lowered.startswith("interproscan") or lowered == "interpro":
+        return "InterProScan"
     return value
 
 
@@ -168,6 +175,10 @@ def _row_evidence_class(
         return "ko"
     if source_id == "eggNOG":
         return "functional_annotation"
+    if source_id == "InterProScan":
+        value = row.get("evidence_class")
+        if isinstance(value, str) and value:
+            return value
     first = next(iter(matches), None)
     return (
         insertion_evidence_class(first)
@@ -227,6 +238,8 @@ def _row_source(row: Mapping[str, Any]) -> str | None:
         return "eggNOG"
     if entry_type == "kofam_hit":
         return "KofamScan"
+    if entry_type.startswith("interproscan"):
+        return "InterProScan"
     source = row.get("source")
     return _source_id(str(source)) if source else None
 
@@ -247,6 +260,10 @@ def _row_field_and_value(row: Mapping[str, Any]) -> tuple[str, str, str]:
         "PFAMs": "note",
         "eggNOG_OGs": "note",
         "COG_category": "note",
+        "InterPro": "db_xref",
+        "GO": "db_xref",
+        "Pfam": "note",
+        "TIGRFAM": "note",
     }.get(field, str(row.get("qualifier", field)))
     value = str(row.get("normalized_value", row.get("value", "")))
     return field, qualifier, value
@@ -308,6 +325,7 @@ def build_candidate_ledger(
             "eggnog_candidate",
             "eggnog_pair_conflict",
             "kofam_hit",
+            "interproscan_candidate",
         }:
             continue
         source_id = _row_source(row)
@@ -424,6 +442,7 @@ def build_candidate_ledger(
                         "confidence_status",
                         "score",
                         "e_value",
+                        "support_witness",
                     )
                     if key in row
                 },
@@ -558,6 +577,13 @@ def build_candidate_ledger(
                 functional_support[
                     (candidate.source_id, target_uid, candidate.evidence_class)
                 ].add(candidate.candidate_id)
+                if (
+                    candidate.source_id == "InterProScan"
+                    and candidate.evidence_class in INTERPROSCAN_FUNCTIONAL_CLASSES
+                ):
+                    functional_support[
+                        ("InterProScan", target_uid, "InterProScan:producer")
+                    ].add(candidate.candidate_id)
     for candidate in candidates:
         if candidate.candidate_role == "producer_provenance":
             supporting = {
@@ -567,7 +593,27 @@ def build_candidate_ledger(
                     (candidate.source_id, target_uid, candidate.evidence_class), set()
                 )
             }
-            candidate.supporting_candidate_ids = tuple(sorted(supporting))
+            if candidate.source_id == "InterProScan":
+                # For InterProScan: only link accepted candidates on the exact same target
+                # that were newly emitted (or shared support). Supported-existing alone does not emit inference.
+                emitted_support = {
+                    cid
+                    for cid in supporting
+                    if any(
+                        c.candidate_id == cid and c.final_status in EMITTED_STATUSES
+                        for c in candidates
+                    )
+                }
+                if not emitted_support or not candidate.insertion_ids:
+                    if candidate.final_status == "emitted":
+                        candidate.final_status = "suppressed_conflict"
+                        candidate.reason_code = "no_surviving_functional_annotation"
+                    candidate.insertion_ids = ()
+                    candidate.supporting_candidate_ids = ()
+                else:
+                    candidate.supporting_candidate_ids = tuple(sorted(emitted_support))
+            else:
+                candidate.supporting_candidate_ids = tuple(sorted(supporting))
 
     # Publish source projections only after shared-support reconciliation is done.
     for candidate in candidates:
@@ -577,6 +623,10 @@ def build_candidate_ledger(
             source_row["status"] = candidate.final_status
             source_row["final_status"] = candidate.final_status
             source_row["reason_code"] = candidate.reason_code
+            source_row["insertion_ids"] = list(candidate.insertion_ids)
+            source_row["supporting_candidate_ids"] = list(
+                candidate.supporting_candidate_ids
+            )
     candidates.sort(key=lambda item: item.candidate_id)
     rows = [candidate.as_dict() for candidate in candidates]
     counts = {
@@ -767,7 +817,10 @@ def validate_candidate_ledger(
             status == "supported_existing" and bool(output_feature_by_uid)
         ) or (status in EMITTED_STATUSES and output is not None)
         if check_semantic_output:
-            from enrich_bakta_lib.sources.value_rules import structured_note_tokens
+            from enrich_bakta_lib.sources.value_rules import (
+                parse_standalone_member_note,
+                structured_note_tokens,
+            )
 
             for target in targets:
                 feature = output_feature_by_uid.get(target)
@@ -776,6 +829,12 @@ def validate_candidate_ledger(
                         f"candidate {candidate_id!r} target is absent from output"
                     )
                 values = set(feature.values(qualifier))
+                if qualifier == "note":
+                    values.update(
+                        match.canonical_note
+                        for note in feature.values("note")
+                        if (match := parse_standalone_member_note(note)) is not None
+                    )
                 if qualifier == "db_xref":
                     values.update(
                         token
@@ -814,9 +873,14 @@ def validate_candidate_ledger(
                 )
             row_role = row.get("candidate_role", "functional_proposal")
             if row_role == "producer_provenance":
+                allowed_classes = (
+                    INTERPROSCAN_FUNCTIONAL_CLASSES
+                    if row.get("source_id") == "InterProScan"
+                    else {row.get("evidence_class")}
+                )
                 if (
                     supporting_row.get("source_id") != row.get("source_id")
-                    or supporting_row.get("evidence_class") != row.get("evidence_class")
+                    or supporting_row.get("evidence_class") not in allowed_classes
                     or supporting_row.get("candidate_role")
                     not in {"functional_proposal", "substantive_evidence"}
                     or not set(supporting_row.get("target_feature_uids", []))
@@ -843,6 +907,11 @@ def validate_candidate_ledger(
             row_role = "producer_provenance"
         if row_role != "producer_provenance":
             continue
+        allowed_classes = (
+            INTERPROSCAN_FUNCTIONAL_CLASSES
+            if row.get("source_id") == "InterProScan"
+            else {row.get("evidence_class")}
+        )
         supporting_rows = [
             by_id[supporting_id]
             for supporting_id in row.get("supporting_candidate_ids", [])
@@ -850,7 +919,7 @@ def validate_candidate_ledger(
             and by_id[supporting_id].get("candidate_role", "functional_proposal")
             in {"functional_proposal", "substantive_evidence"}
             and by_id[supporting_id].get("source_id") == row.get("source_id")
-            and by_id[supporting_id].get("evidence_class") == row.get("evidence_class")
+            and by_id[supporting_id].get("evidence_class") in allowed_classes
             and set(by_id[supporting_id].get("target_feature_uids", []))
             & set(row.get("target_feature_uids", []))
         ]
