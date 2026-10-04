@@ -37,6 +37,18 @@ jobs:
       - run: python -m pip install -e ".[dev,xlsx]"
       - run: python -c "import openpyxl; print(openpyxl.__version__)"
       - run: python -m pytest -q tests/test_hardening_regressions.py -k xlsx
+      - run: python -m pytest -q tests/test_followthrough.py -k xlsx
+
+  dependency-floor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e ".[dev,xlsx]" "biopython==1.83" "setuptools==77.0.3" wheel
+      - run: python -m pytest -q
+      - run: python -m build --no-isolation
 
   package:
     runs-on: ${{ matrix.os }}
