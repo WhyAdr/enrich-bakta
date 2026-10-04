@@ -1,832 +1,446 @@
-# Audited Implementation Plan: InterProScan Annotation Enrichment
+# Refined implementation plan: InterProScan annotation enrichment
 
-## Audit Verdict & Executive Summary
+**Review date:** 2026-10-04
+**Reviewed against:** `f5de296` (`origin/main`)
+**Status:** design reviewed and validated; implementation remains pending
 
-The published `InterProScan-datasets` across `BK71A`, `C14`, and `SM` provide rich domain architecture, protein family classification, and functional ontology evidence (InterPro entries, GO terms, Pfam, TIGRFAM, CDD, etc.). However, integrating InterProScan evidence into the byte-preserving Bakta enrichment pipeline requires strict architectural guardrails to prevent data explosion, maintain GenBank specification compliance, and preserve byte-exact provenance.
+This document is the corrected implementation specification for adding
+InterProScan evidence to `enrich-bakta`. It replaces the earlier Gemini draft's
+non-executable pseudocode and records the checks that were actually run against
+the published corpus and current package.
 
-This plan resolves the following findings identified during the review of the real InterProScan dataset files (`.tsv`, `.gff3`, `.json`):
+## Review verdict
 
-1. **Pathway Qualifier Explosion Guardrail**: Column 14 in the InterProScan TSV files contains extensive cross-references to external pathway databases, predominantly eukaryotic pathways from Reactome (over 4.5 million occurrences per sample, mapping human, mouse, rat, and fly pathways) and MetaCyc (over 2.4 million occurrences). Directly emitting these as GenBank qualifiers (`/db_xref` or `/note`) would bloat the `.gbff` files by hundreds of megabytes with biologically inappropriate eukaryotic pathway assertions on bacterial genomes. Pathway annotations must **never** be promoted to feature qualifiers; they must be captured exclusively in sidecar context manifests (`--context-report`).
-2. **Streaming TSV vs. Massive JSON Parsing**: While the `.json` exports (823 MB to 997 MB per sample) contain rich release version metadata, loading them with `json.load()` requires 4–6 GB of memory and causes significant latency. The `.tsv` files (131 MB to 157 MB) contain all primary mapping evidence (query accession, sequence MD5, member database, signature, coordinates, scores, InterPro accession, and GO terms) and can be streamed line-by-line with negligible memory footprint. The implementation must adopt **streaming TSV parsing** as the default production engine, with `--interproscan-version` supplied via CLI or inferred from peer manifest/JSON metadata.
-3. **Sequence Integrity & Translation Concordance**: InterProScan TSV exports record the 32-character MD5 digest of each query protein in Column 1. Verification against the Bakta FAA and GBFF files confirms:
-   - **C14**: 4,457 query proteins; 0 locus tag mismatches; 0 sequence MD5 mismatches against `C14-NMZ.faa`.
-   - **SM**: 4,381 query proteins; 0 locus tag mismatches; 0 sequence MD5 mismatches against `SM-NMZ.faa`.
-   - **BK71A**: 3,834 query proteins; 0 locus tag mismatches against `BK71A-restored.gbff`; 0 MD5 mismatches against the restored CDS `/translation` strings.
-   The parser must strictly enforce sequence MD5 parity between the InterProScan evidence, the supplied FAA, and the target GBFF CDS `/translation`.
-4. **BK71A Provenance Boundary**: BK71A does not possess a pristine Bakta FAA in this repository. Its InterProScan results match the restored translation bytes in `BK71A-restored.gbff` perfectly, but under repository data policy (`docs/data/PUBLISHING.md`), BK71A artifacts remain `historical_unverified`. The pipeline must require explicit acknowledgment (`--allow-unverified-lineage` or `--translation-evidence-manifest`) when enriching BK71A.
-5. **Qualifier Normalization & INSDC Standards**:
-   - InterPro accession (`IPRxxxxxx`): standard INSDC `/db_xref="InterPro:IPRxxxxxx"`.
-   - Gene Ontology (`GO:ddddddd`): standard INSDC `/db_xref="GO:ddddddd"`.
-   - Member Database Signatures: Bakta natively emits Pfam as `/note="PFAM:PFxxxxx.yy"`. InterProScan outputs unversioned base accessions (`PFxxxxx`). The pipeline must support syntactic parity via `/note="PFAM:PFxxxxx"`, while detecting base-accession overlap against existing versioned Bakta notes to prevent duplicate qualification.
-6. **Multi-Source Shared Support**: InterProScan contributes 5,549 novel GO terms in C14 and 5,475 in SM. Crucially, 3,858 GO terms in C14 overlap with Bakta's existing qualifiers, and 4,528 overlap with eggNOG annotations. The merge engine and candidate ledger (`schemas/merge-manifest.v2.schema.json`) must record these as `shared_support` or `supported_existing`, linking provenance across all supporting evidence sources without duplicate line emissions.
+The direction is sound: use InterProScan TSV as the runtime evidence source,
+preserve the pristine Bakta bytes, promote only bounded feature-level evidence,
+and keep pathway context out of GenBank qualifiers. The draft was not ready to
+implement unchanged.
 
----
+The main corrections are:
 
-## Dataset Review & Scientific Baselines
+1. The InterProScan MD5 is TSV column 2, not column 1. The official TSV
+   contract defines columns 1--13 as the required match fields, with GO and
+   pathway columns 14 and 15 optional. The materialized corpus has 13-column
+   unintegrated rows and 15-column integrated rows; a parser must accept those
+   shapes and reject malformed shapes. See the
+   [official InterProScan output-format specification](https://github.com/ebi-pf-team/interproscan-docs/blob/v5/docs/OutputFormats.rst).
+2. The published evidence is under `data/<sample>/evidence/interproscan/`;
+   the draft's `InterProScan-datasets/<sample>/` root directories do not exist.
+   `docs/data/PUBLISHED-MANIFEST.json` is the clean-clone authority.
+3. The draft's C14 eggNOG overlap value of 4,528 is not reproducible under a
+   defined `(query_id, GO term)` pair key. The validated overlaps are 2,063
+   pairs for C14 and 2,054 for SM. The 3,858/3,857 overlaps with existing
+   Bakta GO qualifiers and the 5,549/5,475 novel pair counts are reproducible.
+4. No InterProScan source module or CLI exists in the current package. The
+   proposed CLI and real-data output claims are therefore acceptance targets,
+   not current capabilities.
+5. The draft calls `qualifier_insertion()` and `comment_insertion()` with the
+   wrong signatures and constructs `CandidateDecision` objects directly. The
+   current architecture expects source adapters to return insertions and
+   evidence rows; `build_candidate_ledger()` then creates and validates typed
+   candidate decisions centrally.
+6. The existing lineage contract is
+   `--translation-evidence-manifest` plus
+   `--allow-imported-translations`. Do not introduce a parallel
+   `--allow-unverified-lineage` flag for this feature.
+7. The existing unified CLI has one `--context-report` option. InterProScan
+   must extend that contract rather than add a competing
+   `--interproscan-context-report` output path.
+8. A wall-clock date in an automatic COMMENT marker would violate byte
+   idempotency. Use the existing explicit `--merge-timestamp` policy and make
+   the source hash/version marker deterministic by default.
 
-### Materialized File Inventory
+## Evidence checked
 
-The evidence files are published in Git LFS under `data/<sample>/evidence/interproscan/` and referenced by the root drop directories `InterProScan-datasets/<sample>/`:
+The following checks were run without rewriting repository data:
 
-| Sample | Input Role | Format | Path | Size (Bytes) | SHA-256 |
-|---|---|---|---|---:|---|
-| **BK71A** | Evidence | TSV | `data/BK71A/evidence/interproscan/BK71A.interproscan.tsv` | 131,729,054 | `0b44aab2a511ebec53f1fd78ae004674ad060c3acb44a2a31864bdbfd974aa21` |
-| **BK71A** | Evidence | GFF3 | `data/BK71A/evidence/interproscan/BK71A.interproscan.gff3` | 147,670,717 | `a827963602a2143747b7313b300c850fcaf1bfc967de09564a95afb9953e859a` |
-| **BK71A** | Evidence | JSON | `data/BK71A/evidence/interproscan/BK71A.interproscan.json` | 823,138,682 | `7b6805fc2b00def04c2ddced9471bf6ed16ea34683d426adc06bc55bb3b9282c` |
-| **C14** | Evidence | TSV | `data/C14/evidence/interproscan/C14-NMZ.interproscan.tsv` | 157,031,166 | `5de249ac97ed468bdae75c5ab483d91f5d2f613e7dbbc2e922ee263ec441ac6b` |
-| **C14** | Evidence | GFF3 | `data/C14/evidence/interproscan/C14-NMZ.interproscan.gff3` | 176,427,419 | `8c3fc56a24c208a8fd3cb720f30e8c5d8e2533b0419806935e6f20a51a773a56` |
-| **C14** | Evidence | JSON | `data/C14/evidence/interproscan/C14-NMZ.interproscan.json` | 997,020,038 | `cc992aa4a648490610ea83d7276ea054031f91270485220f8dfef38ca4891d69` |
-| **SM** | Evidence | TSV | `data/SM/evidence/interproscan/SM-NMZ.interproscan.tsv` | 153,607,485 | `3cb5f0e8b6723faae26f450c4cc288526452cd8e9483e7aa0920029f2d3f29fe` |
-| **SM** | Evidence | GFF3 | `data/SM/evidence/interproscan/SM-NMZ.interproscan.gff3` | 172,655,728 | `9cfb5bc785c48f14bcb38e748e79b37c66c5107af07efacd19775471cd6b7f67` |
-| **SM** | Evidence | JSON | `data/SM/evidence/interproscan/SM-NMZ.interproscan.json` | 976,373,653 | `6df5770d87204131b42b24f8bb9f0726e9662518e21a78da4b75e5edb8cf2bd2` |
+- `python tools/validate_dataset_manifest.py docs/data/MANIFEST.json`:
+  86 artifacts validated.
+- `python tools/validate_dataset_manifest.py
+  docs/data/PUBLISHED-MANIFEST.json`: 42 artifacts validated.
+- All nine published InterProScan TSV/GFF3/JSON SHA-256 values match the
+  published manifest. They are tracked through Git LFS.
+- The current baseline suite passes: `146 passed`.
+- The committed Python source scope passes Ruff, Ruff format, and
+  `python -m mypy src`. The exact `ruff check .` command in this working
+  tree also visits two untracked follow-through helper scripts; those files are
+  intentionally not part of this plan or release input. A clean clone is the
+  authoritative repository-wide gate.
+- `gbparse` summaries/validation and the canonical raw-byte parser confirmed
+  the base GenBank records and translation semantics without loading full
+  flatfiles into the review context.
 
-Producer version recorded in `docs/data/MANIFEST.json`: `InterProScan 5.59-91.0`.
+### Validated corpus baseline
 
-### Exact Dataset Characterization & Baseline Metrics
-
-The following metrics reflect the audited content of the materialized TSV files against the pristine Bakta GBFF records:
+The manifest remains authoritative for file sizes and hashes. These compact
+metrics were independently recomputed by streaming the TSVs:
 
 | Metric | BK71A | C14 | SM |
 |---|---:|---:|---:|
-| **Total Bakta CDS Features** | 4,131 | 4,636 | 4,576 |
-| **InterProScan Total Hit Lines** | 32,791 | 40,234 | 39,684 |
-| **Unique Query CDSs in InterProScan** | 3,834 | 4,457 | 4,381 |
-| **Bakta CDSs without InterProScan Hit** | 297 | 179 | 195 |
-| **Query Locus Tag Mismatches with GBFF** | **0** | **0** | **0** |
-| **Sequence MD5 Mismatches with FAA / GBFF** | **0** | **0** | **0** |
-| **Integrated Hits (assigned to InterPro Entry)** | 22,360 | 27,420 | 27,044 |
-| **Unintegrated Hits (`-` InterPro Entry)** | 10,431 | 12,814 | 12,640 |
-| **Unique CDS–InterPro Accession Pairs** | 12,994 | 16,160 | 15,930 |
-| **Unique InterPro Accessions (IPR IDs)** | 5,415 | 6,282 | 6,254 |
-| **Pristine Bakta InterPro Entries** | 0 | 0 | 0 |
-| **Novel CDS–InterPro Pairs to Add** | **12,994** | **16,160** | **15,930** |
-| **Total CDS–GO Pairs in InterProScan** | 6,880 | 9,407 | 9,332 |
-| **Unique GO Term Identifiers** | 1,354 | 1,725 | 1,731 |
-| **GO Pairs Overlapping Pristine Bakta** | 3,680 | 3,858 | 3,857 |
-| **Novel CDS–GO Pairs to Add** | **3,200** | **5,549** | **5,475** |
-| **Total CDS–Pfam Signature Pairs** | 5,131 | 6,219 | 6,088 |
-| **Pfam Overlap with Pristine Bakta Notes** | 9 | 5 | 15 |
-| **Novel CDS–Pfam Pairs** | **5,122** | **6,214** | **6,073** |
-| **Total CDS–TIGRFAM Signature Pairs** | 1,454 | 1,766 | 1,758 |
-| **Total CDS–CDD Signature Pairs** | 2,183 | 2,591 | 2,571 |
-| **Reactome Pathway Cross-References (Col 14)** | 3,717,389 | 4,534,168 | 4,416,062 |
-| **MetaCyc Pathway Cross-References (Col 14)** | 2,177,198 | 2,441,941 | 2,410,944 |
+| Target CDS features | 4,131 | 4,636 | 4,576 |
+| InterProScan data rows | 32,791 | 40,234 | 39,684 |
+| Unique query CDSs | 3,834 | 4,457 | 4,381 |
+| CDSs without an InterProScan query | 297 | 179 | 195 |
+| Rows with an InterPro accession | 22,360 | 27,420 | 27,044 |
+| Rows without an InterPro accession | 10,431 | 12,814 | 12,640 |
+| Unique CDS--InterPro pairs | 12,994 | 16,160 | 15,930 |
+| Unique InterPro accessions | 5,415 | 6,282 | 6,254 |
+| CDS--GO pairs | 6,880 | 9,407 | 9,332 |
+| Unique GO terms | 1,354 | 1,725 | 1,731 |
+| Pfam pairs | 5,131 | 6,219 | 6,088 |
+| Pfam pairs already represented by Bakta notes | 9 | 5 | 15 |
+| Novel Pfam pairs | 5,122 | 6,214 | 6,073 |
+| TIGRFAM pairs | 1,454 | 1,766 | 1,758 |
+| CDD pairs | 2,183 | 2,591 | 2,571 |
+| Reactome pathway tokens | 3,717,389 | 4,534,168 | 4,416,062 |
+| MetaCyc pathway tokens | 2,177,198 | 2,441,941 | 2,410,944 |
 
-### Member Database Hit Distribution
+Identity checks found zero missing query locus tags, zero inconsistent TSV MD5s,
+zero FAA MD5 mismatches for C14/SM, and zero target-GBFF translation MD5
+mismatches for all three samples. The BK71A comparison is against the restored
+GBFF translations and does not establish pristine Bakta input lineage.
 
-InterProScan combines multiple member database analyses. In C14 (40,234 total hits), the analysis breakdown is:
-- `Pfam`: 6,479 hits (6,258 integrated into InterPro, 221 unintegrated)
-- `Gene3D`: 6,463 hits (3,649 integrated, 2,814 unintegrated)
-- `SUPERFAMILY`: 5,131 hits (4,159 integrated, 972 unintegrated)
-- `PANTHER`: 3,760 hits (1,226 integrated, 2,534 unintegrated)
-- `PRINTS`: 3,581 hits (3,007 integrated, 574 unintegrated)
-- `FunFam`: 2,791 hits (0 integrated, 2,791 unintegrated)
-- `CDD`: 2,637 hits (1,126 integrated, 1,511 unintegrated)
-- `ProSiteProfiles`: 1,964 hits (1,782 integrated, 182 unintegrated)
-- `TIGRFAM`: 1,787 hits (1,766 integrated, 21 unintegrated)
-- `ProSitePatterns`: 1,367 hits (1,340 integrated, 27 unintegrated)
-- `SMART`: 1,292 hits (1,243 integrated, 49 unintegrated)
-- `Hamap`: 1,062 hits (1,062 integrated, 0 unintegrated)
-- `PIRSF`: 791 hits (745 integrated, 46 unintegrated)
-- `Coils`: 501 hits (0 integrated, 501 unintegrated)
-- `MobiDBLite`: 486 hits (0 integrated, 486 unintegrated)
-- `SFLD`: 141 hits (57 integrated, 84 unintegrated)
-- `AntiFam`: 1 hit (0 integrated, 1 unintegrated)
+GO overlap is defined explicitly as the same `(query_id, normalized GO term)`:
 
----
+| Pair relationship | C14 | SM |
+|---|---:|---:|
+| InterProScan pairs already in pristine Bakta | 3,858 | 3,857 |
+| Novel InterProScan pairs | 5,549 | 5,475 |
+| InterProScan pairs also present in eggNOG | 2,063 | 2,054 |
 
-## Required Invariants & Policy
+The last row is a diagnostic baseline for cross-source support, not a claim
+that all overlapping evidence should be emitted twice.
 
-1. **Pristine Bakta Byte Preservation**: The pristine Bakta GBFF remains the authoritative base. Splicing into byte offsets must retain original sequence, header, and indentation formatting. Only allowlisted insertions may differ.
-2. **Deterministic Sequence Identity Validation**:
-   - Every InterProScan row query ID must exist uniquely as a CDS `locus_tag` in the base GBFF.
-   - When an FAA is provided, the query ID must exist in the FAA, and the TSV sequence MD5 (Column 1) must equal the MD5 of the uppercase FAA sequence.
-   - The FAA sequence must match the GBFF CDS `/translation`.
-   - Unknown queries or MD5 hash mismatches are fatal.
-3. **Non-Destructive Qualifier Merging**:
-   - Existing Bakta qualifiers (`/gene`, `/product`, `/protein_id`, `/translation`, `/note`, `/db_xref`, `/EC_number`) are never replaced or removed.
-   - Existing `/db_xref="GO:..."` qualifiers are retained; novel GO terms are appended.
-   - Novel InterPro entries are appended as `/db_xref="InterPro:IPRxxxxxx"`.
-   - If Bakta already has `/note="PFAM:PF00005.33"`, a candidate for `PF00005` is recognized as `supported_existing` and not re-emitted.
-4. **Idempotency**: Running the enrichment twice with the same InterProScan input must produce byte-identical output with zero secondary insertions.
-5. **No Biological Pathway Pollution**: Reactome and MetaCyc pathway strings must not be written to GenBank feature qualifiers. They are routed exclusively to the JSON sidecar report.
-6. **Feature Provenance & Structured Inference**:
-   - For every CDS receiving at least one InterProScan qualifier, add one structured inference:
-     `/inference="protein motif:InterProScan:5.59-91.0"`
-   - Append one source COMMENT marker per record:
-     `##enrich-bakta:InterProScan:v1##` with software version, date, and provenance caveat.
-7. **Candidate Ledger Compliance**:
-   - All candidate proposals, emitted qualifiers, and suppressed/shared entries must conform to `schemas/merge-manifest.v2.schema.json`.
-   - Source ID: `InterProScan`.
-   - Evidence classes: `interpro_entry`, `go_term`, `member_db_signature`, `pathway_context`.
+## Scientific and provenance policy
 
----
+### Inputs and lineage
 
-## Architectural Design
+- C14 and SM use the pristine inputs
+  `data/C14/bakta/C14-NMZ.gbff` / `.faa` and
+  `data/SM/bakta/SM-NMZ.gbff` / `.faa`.
+- BK71A uses `data/BK71A/derived/restored/BK71A-restored.gbff` only as a
+  historical target. The repository has no pristine BK71A Bakta FAA and no
+  bound translation-evidence manifest for that published artifact.
+- A functional InterProScan merge must fail closed for a restored target unless
+  `--translation-evidence-manifest` is supplied and the existing
+  `--allow-imported-translations` policy is satisfied. The implementation must
+  not silently treat BK71A's restored translations as pristine evidence.
+- The TSV is the runtime parser input. Published GFF3 and JSON are retained for
+  audit/provenance and optional one-time parity checks; production code must not
+  `json.load()` the 823--997 MB JSON exports merely to obtain the version.
+- `--interproscan-version` is explicit and required for a reproducible merge.
+  The value is recorded in metadata, COMMENT provenance, and the sidecar. A
+  repository manifest may document the version, but runtime auto-detection from
+  a giant JSON file is not a supported fallback.
 
-### Module Structure
+### Qualifier policy
+
+| Evidence | Default output | Rule |
+|---|---|---|
+| InterPro accession | `/db_xref=InterPro:IPRxxxxxx` | strict accession grammar; existing exact values are `supported_existing` |
+| GO term | `/db_xref=GO:ddddddd` | normalize optional source decorations; preserve raw token in evidence rows |
+| Pfam | `/note=PFAM:PFxxxxx` | compare by base accession so `PFxxxxx.33` in Bakta suppresses a duplicate |
+| TIGRFAM | `/note=TIGRFAM:TIGRxxxxx` | opt-in through the member-database allowlist; no free-text descriptions |
+| CDD | context by default; optional normalized note policy | enable only after a dedicated CDD grammar/fixture decision |
+| Reactome/MetaCyc pathways | never a feature qualifier | summarize in the context sidecar and retain the raw TSV as authoritative evidence |
+| Source inference | one `/inference` per affected CDS | add only when a new InterProScan feature qualifier survives reconciliation |
+
+The initial member-database allowlist is `Pfam,TIGRFAM`. Other member analyses
+remain audit/context evidence until a specific normalized qualifier policy is
+approved. Do not promote member descriptions, scores, dates, or pathway labels
+to GenBank qualifiers. All outputs remain computational annotation evidence, not
+proof of expression, enzyme activity, pathway completeness, or phenotype.
+
+## Architecture aligned with the current package
+
+### New source adapter
+
+Create `src/enrich_bakta_lib/sources/interproscan.py` with these responsibilities:
+
+1. `iter_interproscan_tsv(stream)` yields validated immutable hit records from a
+   text stream. It must:
+   - accept exactly 13, 14, or 15 columns, treating optional GO/pathway fields
+     as absent when omitted;
+   - validate non-empty query IDs, 32-hex MD5, positive sequence length,
+     inclusive `1 <= start <= stop <= length`, and required analysis/signature
+     fields;
+   - normalize `-` to absent values;
+   - accept bare GO IDs and official source-decorated GO tokens, normalizing to
+     bare `GO:ddddddd` for promotion;
+   - validate InterPro, Pfam, TIGRFAM, and optional CDD accessions with full
+     matches, never prefix checks;
+   - preserve row number and raw values for diagnostics; and
+   - never materialize the input file as one string or list of raw rows.
+2. Aggregate only the bounded per-query evidence needed for planning. Do not
+   use `hits = list(iter_interproscan_tsv(...))` as in the draft. Pathway
+   context must be counted or streamed into the sidecar; it must not create
+   unbounded in-memory lists merely because the sidecar was requested.
+3. Validate identity before planning any insertion:
+   - every query maps to exactly one base CDS locus tag;
+   - the TSV MD5 agrees with the normalized FAA sequence when FAA is supplied;
+   - the FAA sequence agrees with the target CDS `/translation`; and
+   - every repeated query has one consistent MD5 and protein length.
+   Use the package's existing `parse_faa()`, `normalize_protein()`,
+   `parse_genbank_bytes()`, `cds_by_locus()`, and translation-evidence loader.
+
+The adapter should return an explicit plan object analogous to `EggnogPlan`:
 
 ```text
-src/enrich_bakta_lib/
-├── core/
-│   ├── merge_engine.py      # Core byte-splicing and verification primitives
-│   └── decisions.py         # CandidateDecision, source resolution, and ledger reconciliation
-├── sources/
-│   ├── interproscan.py      # NEW: Streaming TSV parser, sequence validator, and addition planner
-│   ├── value_rules.py       # Updated: Affirmative token validators for IPR, PF, TIGR, CDD
-│   ├── baktfold.py          # Baktfold structural annotations
-│   ├── eggnog.py            # eggNOG-mapper functional annotations
-│   └── kofam.py             # KofamScan KEGG annotations
-└── workflows/
-    └── enrich.py            # Updated: Unified 4-way merge orchestration CLI
-merge_interproscan_bakta.py   # NEW: Standalone InterProScan enrichment CLI
+InterProScanPlan(
+    insertions,
+    evidence_rows,
+    stats,
+    context_report,
+)
 ```
 
-### Data Flow & Multi-Source Reconciliation
+It must not construct `CandidateDecision` directly. For each proposed or
+already-supported value, emit an `interproscan_candidate` evidence row with
+`source`, query/feature identity, field, qualifier, raw and normalized values,
+status, `candidate_role`, `support_class`, reason code, and emitted qualifier
+summary. The central candidate-ledger builder will assign deterministic IDs,
+insertion references, and cross-source support.
 
-```mermaid
-flowchart TD
-    A[Pristine Bakta GBFF] --> E[Merge Engine]
-    B[Bakta FAA] --> V[Sequence & MD5 Validator]
-    C[InterProScan TSV] --> P[InterProScan Streaming Parser]
-    P --> V
-    V --> IP[InterProScan Planner]
-    
-    BF[Baktfold Additions] --> R[Candidate Reconciliation Engine]
-    KF[Kofam Additions] --> R
-    EN[eggNOG Additions] --> R
-    IP --> R
-    
-    R --> D[Decisions Ledger Builder]
-    D --> S[Candidate Ledger v3]
-    R --> I[Reconciled Insertions List]
-    
-    I --> E
-    E --> OUT[Enriched GBFF Output]
-    S --> MAN[Merge Manifest v2]
-    P -.-> SC[Sidecar Context JSON\nReactome / MetaCyc / Coordinates]
-```
+### Current insertion APIs to reuse
 
----
-
-## Implementation Phases
-
-### Phase 0: Hygiene, Test Fixtures & Regression Baseline
-
-1. Verify existing test suite and linting passes:
-   ```powershell
-   $env:PYTHONPATH="."
-   python -m pytest -q --basetemp=".test-output/tmp" -o cache_dir=".test-output/cache"
-   ruff check src tests tools
-   python -m mypy src
-   ```
-2. Build minimal synthetic InterProScan test fixtures in `tests/test_interproscan_enrichment.py`:
-   - Valid TSV with integrated and unintegrated hits.
-   - Hits with GO terms and multi-species Reactome pathways.
-   - TSV with sequence MD5 matching synthetic FASTA.
-   - Negative fixtures: invalid MD5, corrupt column count, unknown locus tags, invalid IPR accession grammar.
-
-### Phase 1: Value Rules & Affirmative Grammars
-
-Update `src/enrich_bakta_lib/sources/value_rules.py`:
-- Add `INTERPRO_RE = re.compile(r"IPR\d{6}\Z")`
-- Add `PFAM_RE = re.compile(r"PF\d{5}\Z")`
-- Add `TIGRFAM_RE = re.compile(r"TIGR\d{5}\Z")`
-- Add `CDD_RE = re.compile(r"(?:cd|cl|sd|ch)\d{5}\Z")`
-- Provide `validate_interpro_entry(val)` and `validate_member_db_signature(db, val)` functions.
-
-### Phase 2: InterProScan Source Model & Streaming Parser
-
-Create `src/enrich_bakta_lib/sources/interproscan.py`:
-- Immutable `InterProScanHit` dataclass.
-- Streaming generator `iter_interproscan_tsv(handle)` to process 150MB+ TSV files row-by-row without buffering entire tables in RAM.
-- MD5 validation against FAA and GBFF translations.
-- `plan_interproscan_additions(base, hits, ...)`:
-  - Generates `/db_xref="InterPro:IPRxxxxxx"` insertions.
-  - Generates `/db_xref="GO:ddddddd"` insertions.
-  - Generates member DB note/xref insertions based on policy.
-  - Generates `/inference="protein motif:InterProScan:<version>"` insertions.
-  - Produces candidate decisions for the ledger.
-
-### Phase 3: Candidate Ledger & Reconciliation Integration
-
-Update `src/enrich_bakta_lib/core/decisions.py`:
-- Expand `_source_id` to recognize `interproscan` and `interpro`.
-- Support evidence classes: `interpro_entry`, `go_term`, `member_db_signature`, `pathway_context`.
-- Update GO term reconciliation:
-  - When eggNOG and InterProScan propose the identical `GO:ddddddd`, emit only **one** insertion.
-  - Mark both candidates as `shared_support` and record cross-references in `supporting_candidate_ids`.
-- Handle Pfam note reconciliation against existing Bakta `/note="PFAM:PFxxxxx.yy"`.
-
-### Phase 4: Standalone & Unified Workflow CLI
-
-1. Create `merge_interproscan_bakta.py` standalone script.
-2. Update `src/enrich_bakta_lib/workflows/enrich.py`:
-   - Add CLI arguments:
-     - `--interproscan PATH`
-     - `--interproscan-version VERSION` (default: auto-detect or "5.59-91.0")
-     - `--interproscan-member-dbs LIST` (default: "Pfam,TIGRFAM")
-     - `--interproscan-pfam-as-xref` (boolean flag, default False)
-     - `--interproscan-context-report PATH`
-   - Incorporate InterProScan into `enrich()` execution chain.
-
-### Phase 5: Verification, Benchmarking & Acceptance Gate
-
-1. Verify synthetic unit and regression test suite.
-2. Execute real data enrichment on C14 and SM using the published evidence files.
-3. Validate output GenBank syntax with Biopython `SeqIO.parse`.
-4. Validate generated manifest against `schemas/merge-manifest.v2.schema.json`.
-5. Verify raw byte idempotency (re-running on enriched output produces identical byte content).
-
----
-
-## Pseudocode Diffs
-
-### 1. Value Rules Extension (`src/enrich_bakta_lib/sources/value_rules.py`)
-
-```diff
---- a/src/enrich_bakta_lib/sources/value_rules.py
-+++ b/src/enrich_bakta_lib/sources/value_rules.py
-@@ -10,6 +10,10 @@
- EC_FULL_RE = re.compile(r"\d+\.\d+\.\d+\.\d+\Z")
- EC_PARTIAL_RE = re.compile(r"(?:\d+\.\d+\.\d+\.-|\d+\.\d+\.-\.-|\d+\.-\.-\.-)\Z")
-+INTERPRO_RE = re.compile(r"IPR\d{6}\Z")
-+PFAM_RE = re.compile(r"PF\d{5}\Z")
-+TIGRFAM_RE = re.compile(r"TIGR\d{5}\Z")
-+CDD_RE = re.compile(r"(?:cd|cl|sd|ch)\d{5}\Z")
- STRUCTURED_TOKEN_RE = re.compile(
--    r"(?:GO:\d{7}|KEGG:K\d{5}|CAZy:(?:GH|GT|PL|CE|AA|CBM)\d+(?:_\d+)?)\Z"
-+    r"(?:GO:\d{7}|KEGG:K\d{5}|CAZy:(?:GH|GT|PL|CE|AA|CBM)\d+(?:_\d+)?|InterPro:IPR\d{6}|PFAM:PF\d{5}(?:\.\d+)?|TIGRFAM:TIGR\d{5})\Z"
- )
-@@ -78,6 +82,31 @@
-     return ValueValidationResult(
-         value,
-         f"{prefix}:{normalized_identifier}",
-         "valid",
-         "supported structural xref",
-     )
-+
-+def validate_interpro_accession(value: str) -> ValueValidationResult:
-+    raw = value.strip()
-+    if not raw:
-+        return ValueValidationResult(value, None, "missing", "InterPro accession is empty")
-+    if raw.startswith("InterPro:"):
-+        raw = raw[9:]
-+    if INTERPRO_RE.fullmatch(raw):
-+        return ValueValidationResult(value, f"InterPro:{raw}", "valid", "valid InterPro accession")
-+    return ValueValidationResult(value, None, "invalid", f"invalid InterPro accession {value!r}")
-+
-+def validate_pfam_accession(value: str) -> ValueValidationResult:
-+    raw = value.strip()
-+    if not raw:
-+        return ValueValidationResult(value, None, "missing", "Pfam accession is empty")
-+    if raw.startswith("PFAM:") or raw.startswith("Pfam:"):
-+        raw = raw[5:]
-+    # Strip optional version suffix for base normalization
-+    base_match = re.match(r"^(PF\d{5})(?:\.\d+)?$", raw)
-+    if base_match:
-+        return ValueValidationResult(value, base_match.group(1), "valid", "valid Pfam accession")
-+    return ValueValidationResult(value, None, "invalid", f"invalid Pfam accession {value!r}")
-```
-
-### 2. InterProScan Source Engine (`src/enrich_bakta_lib/sources/interproscan.py`)
+The implementation must call the existing APIs with their actual contracts:
 
 ```python
-"""InterProScan evidence parser, validator, and addition planner."""
-
-from __future__ import annotations
-
-import hashlib
-import io
-import re
-from collections.abc import Iterable, Iterator, Mapping
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any
-
-from enrich_bakta_lib.core.decisions import CandidateDecision, stable_id
-from enrich_bakta_lib.core.merge_engine import (
-    Insertion,
-    MergeError,
-    RawDocument,
-    RawFeature,
-    cds_by_locus,
-    comment_insertion,
-    feature_uid,
-    format_qualifier,
-    insertion_uid,
-    qualifier_insertion,
-    sha256_bytes,
-)
-from enrich_bakta_lib.sources.value_rules import (
-    validate_interpro_accession,
-    validate_pfam_accession,
+qualifier_insertion(
+    base.data, feature, qualifier, value, source, source_value, order,
+    candidate_role=..., evidence_class=...
 )
 
-COMMENT_MARKER = "##enrich-bakta:InterProScan:v1##"
-GO_RE = re.compile(r"GO:\d{7}\Z")
-
-
-@dataclass(frozen=True)
-class InterProScanHit:
-    row_number: int
-    query_id: str
-    md5: str
-    length: int
-    analysis: str
-    signature_accession: str
-    signature_description: str
-    start: int
-    stop: int
-    score: str
-    status: str
-    date: str
-    interpro_accession: str | None
-    interpro_description: str | None
-    go_terms: tuple[str, ...]
-    pathways: tuple[str, ...]
-
-
-def iter_interproscan_tsv(
-    stream: Iterable[str],
-) -> Iterator[InterProScanHit]:
-    """Stream InterProScan TSV rows with validation."""
-    for row_number, raw_line in enumerate(stream, start=1):
-        line = raw_line.rstrip("\r\n")
-        if not line or line.startswith("#"):
-            continue
-        parts = line.split("\t")
-        if len(parts) < 11:
-            raise MergeError(
-                f"InterProScan TSV row {row_number}: expected >=11 columns, got {len(parts)}"
-            )
-
-        query_id = parts[0].strip()
-        md5 = parts[1].strip()
-        length = int(parts[2].strip())
-        analysis = parts[3].strip()
-        sig_acc = parts[4].strip()
-        sig_desc = parts[5].strip()
-        start = int(parts[6].strip())
-        stop = int(parts[7].strip())
-        score = parts[8].strip()
-        status = parts[9].strip()
-        date = parts[10].strip()
-
-        ipr_acc = (
-            parts[11].strip()
-            if len(parts) > 11 and parts[11].strip() != "-"
-            else None
-        )
-        ipr_desc = (
-            parts[12].strip()
-            if len(parts) > 12 and parts[12].strip() != "-"
-            else None
-        )
-
-        go_terms: tuple[str, ...] = ()
-        if len(parts) > 13 and parts[13].strip() != "-":
-            raw_gos = [g.strip() for g in parts[13].split("|") if g.strip()]
-            go_terms = tuple(dict.fromkeys(g for g in raw_gos if GO_RE.match(g)))
-
-        pathways: tuple[str, ...] = ()
-        if len(parts) > 14 and parts[14].strip() != "-":
-            pathways = tuple(
-                p.strip() for p in parts[14].split("|") if p.strip()
-            )
-
-        yield InterProScanHit(
-            row_number=row_number,
-            query_id=query_id,
-            md5=md5,
-            length=length,
-            analysis=analysis,
-            signature_accession=sig_acc,
-            signature_description=sig_desc,
-            start=start,
-            stop=stop,
-            score=score,
-            status=status,
-            date=date,
-            interpro_accession=ipr_acc,
-            interpro_description=ipr_desc,
-            go_terms=go_terms,
-            pathways=pathways,
-        )
-
-
-def plan_interproscan_additions(
-    base: RawDocument,
-    hits: Iterable[InterProScanHit],
-    *,
-    source_sha256: str,
-    interproscan_version: str = "5.59-91.0",
-    member_dbs: tuple[str, ...] = ("Pfam", "TIGRFAM"),
-    pfam_as_xref: bool = False,
-    faa_proteins: Mapping[str, str] | None = None,
-    add_comment_note: bool = True,
-    add_feature_provenance: bool = True,
-) -> tuple[list[Insertion], list[CandidateDecision], dict[str, Any]]:
-    """Plan additions, candidates, and manifest entries from InterProScan evidence."""
-    cds_map = cds_by_locus(base)
-    insertions: list[Insertion] = []
-    candidates: list[CandidateDecision] = []
-
-    # Group hits by CDS query
-    hits_by_query: dict[str, list[InterProScanHit]] = {}
-    for hit in hits:
-        hits_by_query.setdefault(hit.query_id, []).append(hit)
-
-    # Validate protein existence and MD5 checksum parity
-    for query_id, qhits in hits_by_query.items():
-        if query_id not in cds_map:
-            raise MergeError(f"InterProScan query {query_id!r} not found in base GBFF CDSs")
-
-        expected_md5 = qhits[0].md5
-        if faa_proteins is not None:
-            if query_id not in faa_proteins:
-                raise MergeError(f"InterProScan query {query_id!r} not found in FAA proteins")
-            faa_seq = faa_proteins[query_id]
-            calc_md5 = hashlib.md5(faa_seq.encode("utf-8")).hexdigest()
-            if calc_md5 != expected_md5:
-                raise MergeError(
-                    f"InterProScan MD5 {expected_md5} mismatch for {query_id} (FAA MD5: {calc_md5})"
-                )
-
-    records_with_additions: set[int] = set()
-
-    for query_id, qhits in sorted(hits_by_query.items()):
-        feature = cds_map[query_id]
-        feat_uid = feature_uid(feature)
-        existing_xrefs = set(feature.values("db_xref"))
-        existing_notes = set(feature.values("note"))
-
-        # 1. Plan InterPro entries (/db_xref="InterPro:IPRxxxxxx")
-        unique_iprs = sorted(
-            dict.fromkeys(
-                h.interpro_accession for h in qhits if h.interpro_accession
-            )
-        )
-        for ipr in unique_iprs:
-            xref_val = f"InterPro:{ipr}"
-            cand_id = stable_id(
-                "candidate",
-                {"source": "InterProScan", "query": query_id, "field": "db_xref", "val": xref_val},
-            )
-            if xref_val in existing_xrefs:
-                candidates.append(
-                    CandidateDecision(
-                        candidate_id=cand_id,
-                        source_id="InterProScan",
-                        source_sha256=source_sha256,
-                        target_feature_uids=(feat_uid,),
-                        field="db_xref",
-                        qualifier="db_xref",
-                        raw_value=ipr,
-                        normalized_value=xref_val,
-                        planned_status="supported_existing",
-                        candidate_role="substantive_evidence",
-                        evidence_class="interpro_entry",
-                        reason_code="existing-qualifier-match",
-                        final_status="supported_existing",
-                        reason=f"CDS already contains {xref_val}",
-                    )
-                )
-            else:
-                ins = qualifier_insertion(
-                    feature.record_index,
-                    feat_uid,
-                    "db_xref",
-                    xref_val,
-                    source_id="InterProScan",
-                    evidence_class="interpro_entry",
-                )
-                insertions.append(ins)
-                records_with_additions.add(feature.record_index)
-                candidates.append(
-                    CandidateDecision(
-                        candidate_id=cand_id,
-                        source_id="InterProScan",
-                        source_sha256=source_sha256,
-                        target_feature_uids=(feat_uid,),
-                        field="db_xref",
-                        qualifier="db_xref",
-                        raw_value=ipr,
-                        normalized_value=xref_val,
-                        planned_status="planned_insertion",
-                        candidate_role="substantive_evidence",
-                        evidence_class="interpro_entry",
-                        reason_code="novel-interpro-entry",
-                        insertion_ids=(insertion_uid(ins),),
-                        reason="Novel InterPro accession",
-                    )
-                )
-
-        # 2. Plan GO terms (/db_xref="GO:ddddddd")
-        all_gos = sorted(dict.fromkeys(g for h in qhits for g in h.go_terms))
-        for go in all_gos:
-            cand_id = stable_id(
-                "candidate",
-                {"source": "InterProScan", "query": query_id, "field": "db_xref", "val": go},
-            )
-            if go in existing_xrefs:
-                candidates.append(
-                    CandidateDecision(
-                        candidate_id=cand_id,
-                        source_id="InterProScan",
-                        source_sha256=source_sha256,
-                        target_feature_uids=(feat_uid,),
-                        field="db_xref",
-                        qualifier="db_xref",
-                        raw_value=go,
-                        normalized_value=go,
-                        planned_status="supported_existing",
-                        candidate_role="substantive_evidence",
-                        evidence_class="go_term",
-                        reason_code="existing-qualifier-match",
-                        final_status="supported_existing",
-                        reason=f"CDS already contains {go}",
-                    )
-                )
-            else:
-                ins = qualifier_insertion(
-                    feature.record_index,
-                    feat_uid,
-                    "db_xref",
-                    go,
-                    source_id="InterProScan",
-                    evidence_class="go_term",
-                )
-                insertions.append(ins)
-                records_with_additions.add(feature.record_index)
-                candidates.append(
-                    CandidateDecision(
-                        candidate_id=cand_id,
-                        source_id="InterProScan",
-                        source_sha256=source_sha256,
-                        target_feature_uids=(feat_uid,),
-                        field="db_xref",
-                        qualifier="db_xref",
-                        raw_value=go,
-                        normalized_value=go,
-                        planned_status="planned_insertion",
-                        candidate_role="substantive_evidence",
-                        evidence_class="go_term",
-                        reason_code="novel-go-term",
-                        insertion_ids=(insertion_uid(ins),),
-                        reason="Novel GO term from InterProScan",
-                    )
-                )
-
-        # 3. Plan Member Database Signatures (Pfam, etc.)
-        for db in member_dbs:
-            sigs = sorted(
-                dict.fromkeys(h.signature_accession for h in qhits if h.analysis == db)
-            )
-            for sig in sigs:
-                if db == "Pfam":
-                    note_val = f"PFAM:{sig}"
-                    # Check base overlap with existing notes like PFAM:PF00005.33
-                    has_existing = any(
-                        n.startswith(f"PFAM:{sig}") or n.startswith(f"Pfam:{sig}")
-                        for n in existing_notes
-                    )
-                    cand_id = stable_id(
-                        "candidate",
-                        {"source": "InterProScan", "query": query_id, "field": "note", "val": note_val},
-                    )
-                    if has_existing:
-                        candidates.append(
-                            CandidateDecision(
-                                candidate_id=cand_id,
-                                source_id="InterProScan",
-                                source_sha256=source_sha256,
-                                target_feature_uids=(feat_uid,),
-                                field="note",
-                                qualifier="note",
-                                raw_value=sig,
-                                normalized_value=note_val,
-                                planned_status="supported_existing",
-                                candidate_role="substantive_evidence",
-                                evidence_class="member_db_signature",
-                                reason_code="existing-pfam-match",
-                                final_status="supported_existing",
-                                reason=f"CDS already carries matching Pfam family {sig}",
-                            )
-                        )
-                    else:
-                        qual_type = "db_xref" if pfam_as_xref else "note"
-                        norm_val = f"Pfam:{sig}" if pfam_as_xref else note_val
-                        ins = qualifier_insertion(
-                            feature.record_index,
-                            feat_uid,
-                            qual_type,
-                            norm_val,
-                            source_id="InterProScan",
-                            evidence_class="member_db_signature",
-                        )
-                        insertions.append(ins)
-                        records_with_additions.add(feature.record_index)
-                        candidates.append(
-                            CandidateDecision(
-                                candidate_id=cand_id,
-                                source_id="InterProScan",
-                                source_sha256=source_sha256,
-                                target_feature_uids=(feat_uid,),
-                                field=qual_type,
-                                qualifier=qual_type,
-                                raw_value=sig,
-                                normalized_value=norm_val,
-                                planned_status="planned_insertion",
-                                candidate_role="substantive_evidence",
-                                evidence_class="member_db_signature",
-                                reason_code="novel-pfam-signature",
-                                insertion_ids=(insertion_uid(ins),),
-                                reason="Novel Pfam signature hit",
-                            )
-                        )
-
-        # 4. Feature Provenance Inference
-        if add_feature_provenance and (unique_iprs or all_gos):
-            inf_val = f"protein motif:InterProScan:{interproscan_version}"
-            if inf_val not in feature.values("inference"):
-                ins = qualifier_insertion(
-                    feature.record_index,
-                    feat_uid,
-                    "inference",
-                    inf_val,
-                    source_id="InterProScan",
-                    evidence_class="producer_provenance",
-                )
-                insertions.append(ins)
-
-    # 5. Record COMMENT Note
-    if add_comment_note and records_with_additions:
-        for rec_idx in sorted(records_with_additions):
-            comment_text = (
-                f"{COMMENT_MARKER} InterProScan annotation evidence added by enrich-bakta. "
-                f"Producer: InterProScan v{interproscan_version}. "
-                "Evidence reflects in silico domain/family predictions, not laboratory-verified phenotype."
-            )
-            insertions.append(
-                comment_insertion(
-                    rec_idx,
-                    comment_text,
-                    source_id="InterProScan",
-                )
-            )
-
-    stats = {
-        "queries_processed": len(hits_by_query),
-        "total_insertions": len(insertions),
-        "total_candidates": len(candidates),
-    }
-    return insertions, candidates, stats
+comment_insertion(
+    base, record, marker, lines, source, order
+)
 ```
 
-### 3. Decisions & Candidate Ledger Integration (`src/enrich_bakta_lib/core/decisions.py`)
+Do not reimplement qualifier formatting or byte splicing. Use deterministic
+orders after the highest insertion order already planned by another source.
+Use the existing `reconcile_insertions()` and `finalize_merge()` gates.
 
-```diff
---- a/src/enrich_bakta_lib/core/decisions.py
-+++ b/src/enrich_bakta_lib/core/decisions.py
-@@ -104,6 +104,8 @@
-         return "KofamScan"
-     if lowered.startswith("eggnog"):
-         return "eggNOG"
-+    if lowered.startswith("interproscan") or lowered == "interpro":
-+        return "InterProScan"
-     return value
-@@ -530,6 +532,19 @@
-+            # Reconcile shared GO term proposals across eggNOG and InterProScan
-+            if qualifier == "db_xref" and normalized_value.startswith("GO:"):
-+                existing_entry = emitted_by_feature_and_val.get((target_uid, normalized_value))
-+                if existing_entry is not None:
-+                    # Secondary source providing shared support for already emitted GO term
-+                    decision.final_status = "shared_support"
-+                    decision.reason_code = "shared-support-go"
-+                    decision.supporting_candidate_ids = (existing_entry.candidate_id,)
-+                    decision.insertion_ids = existing_entry.insertion_ids
-+                    existing_entry.supporting_candidate_ids = tuple(
-+                        dict.fromkeys((*existing_entry.supporting_candidate_ids, decision.candidate_id))
-+                    )
-+                    continue
+### Candidate-ledger integration
+
+Make the smallest source-aware changes in `core/decisions.py` and
+`core/merge_engine.py`:
+
+- normalize `interproscan`/`interpro` to source ID `InterProScan`;
+- recognize `interproscan_candidate` rows in `_row_source()` and
+  `build_candidate_ledger()`;
+- map the adapter's field names to the final qualifier/value in
+  `_row_field_and_value()`;
+- add `InterProScan` to unified `source_hashes` and metadata;
+- map `InterProScan provenance` into the `interproscan` source family so
+  provenance is removed if its functional support is removed;
+- rely on the existing semantic reconciliation to collapse exact same-target,
+  same-qualifier, same-value GO proposals from eggNOG and InterProScan; and
+- do not add a one-off GO-specific duplicate branch unless a regression test
+  proves the generic reconciliation path insufficient.
+
+The current validator requires producer-provenance support from the same source
+and evidence class. Since one InterProScan inference can support several
+InterProScan evidence classes, use the recommended design: add a narrowly
+scoped InterProScan provenance support-class map to the ledger builder and
+validator. It must allow an InterProScan provenance candidate to support
+accepted InterPro/GO/member candidates on the same target while retaining the
+existing class-specific rule for Baktfold, KofamScan, and eggNOG. Do not flatten
+all source evidence into one class merely to bypass this invariant, and do not
+emit an unsupported provenance candidate with no valid support links.
+
+### Context-report contract
+
+Reuse the existing unified `--context-report` option. Preserve the existing
+`enrich-bakta.eggnog-context.v1` shape for eggNOG-only runs. Define
+`enrich-bakta.interproscan-context.v1` for InterProScan-only runs and a
+versioned combined `enrich-bakta.context.v1` envelope when both sources are
+present. The InterProScan section must include:
+
+- source SHA-256, InterProScan version, TSV column shape, row/query counts;
+- Reactome, MetaCyc, and other pathway token counts globally and per query;
+- a deterministic digest or sorted bounded representation of pathway context;
+- a statement that pathway tokens are not promoted to feature qualifiers; and
+- no duplicate copy of the entire raw TSV when the published evidence file is
+  already available.
+
+The sidecar writer must be atomic and deterministic. No automatic timestamp may
+enter its bytes.
+
+## CLI and workflow changes
+
+### Unified workflow
+
+Extend the existing `enrich()` API and `enrich_bakta.py` CLI with:
+
+```text
+--interproscan PATH
+--interproscan-version VERSION       required when --interproscan is used
+--interproscan-member-dbs Pfam,TIGRFAM
 ```
 
-### 4. Workflow Orchestration (`src/enrich_bakta_lib/workflows/enrich.py`)
+Use the existing `--context-report`, `--manifest`,
+`--translation-evidence-manifest`, `--allow-imported-translations`,
+`--no-comment-note`, `--no-feature-provenance`, and `--merge-timestamp` options.
+Do not add `--interproscan-context-report` or `--allow-unverified-lineage`.
 
-```diff
---- a/src/enrich_bakta_lib/workflows/enrich.py
-+++ b/src/enrich_bakta_lib/workflows/enrich.py
-@@ -32,6 +32,7 @@
- from enrich_bakta_lib.sources.baktfold import plan_baktfold_additions
- from enrich_bakta_lib.sources.eggnog import parse_eggnog_path, plan_eggnog_additions
- from enrich_bakta_lib.sources.kofam import parse_kofam_table, plan_kofam_additions
-+from enrich_bakta_lib.sources.interproscan import iter_interproscan_tsv, plan_interproscan_additions
-@@ -43,6 +44,10 @@
-     eggnog_version: str | None = None,
-     eggnog_schema: str | None = None,
-     min_eggnog_confidence: str = "low",
-+    interproscan_path: Path | None = None,
-+    interproscan_version: str | None = None,
-+    interproscan_member_dbs: str = "Pfam,TIGRFAM",
-+    interproscan_context_report: Path | None = None,
-     gene_conflict_policy: str = "skip",
-     manifest_path: Path | None = None,
-@@ -57,7 +62,7 @@
--    if not any((baktfold_path, kofamscan_path, eggnog_path)):
-+    if not any((baktfold_path, kofamscan_path, eggnog_path, interproscan_path)):
-         raise MergeError("at least one evidence source is required")
--    if (kofamscan_path or eggnog_path) and faa_path is None:
-+    if (kofamscan_path or eggnog_path or interproscan_path) and faa_path is None:
--        raise MergeError("--faa is required with --kofamscan or --eggnog")
-+        raise MergeError("--faa is required with --kofamscan, --eggnog, or --interproscan")
-@@ -140,6 +145,21 @@
-+    if interproscan_path:
-+        ips_data = read_input_bytes(interproscan_path, "InterProScan")
-+        ips_text = ips_data.decode("utf-8")
-+        hits = list(iter_interproscan_tsv(ips_text.splitlines()))
-+        dbs = tuple(d.strip() for d in interproscan_member_dbs.split(",") if d.strip())
-+        planned, ips_candidates, stats = plan_interproscan_additions(
-+            base,
-+            hits,
-+            source_sha256=sha256_bytes(ips_data),
-+            interproscan_version=interproscan_version or "5.59-91.0",
-+            member_dbs=dbs,
-+            faa_proteins=proteins,
-+            add_comment_note=add_comment_note,
-+            add_feature_provenance=add_feature_provenance,
-+        )
-+        insertions.extend(planned)
-+        candidates.extend(ips_candidates)
-+        source_hashes["InterProScan"] = sha256_bytes(ips_data)
-```
+The workflow must:
 
----
+1. validate the base GenBank bytes before source planning;
+2. require FAA for C14/SM InterProScan runs and validate it against both TSV
+   and GBFF translations;
+3. enforce the existing restored-input translation-evidence gate;
+4. append the TSV to `other_inputs` so final manifests bind its bytes;
+5. pass a monotonic insertion order to the adapter;
+6. merge its rows into the existing reconciliation and candidate-ledger flow;
+7. merge source context with any eggNOG context report; and
+8. record source hash, version, parser statistics, identity counts, member-DB
+   policy, lineage policy, and context-report hash in the JSON manifest.
 
-## Validation Handoff for Peer Agents
+### Standalone compatibility entry point
 
-This validation handoff provides a rigorous, testable specification for subsequent reviewing and testing agents to verify and refine this implementation plan.
+Retain the standalone source-workflow convention with a thin root shim
+`merge_interproscan_bakta.py`. It must import the canonical package
+implementation and contain no duplicate logic. Its CLI should use the same
+named policy options and accept a minimal positional form documented by the
+existing Kofam/eggNOG standalone entry points. The unified CLI remains the
+canonical path for multi-source reconciliation.
 
-### Review Checklist & Invariant Gates
+## Implementation phases
 
-1. **Byte-Level Preservation**:
-   - [ ] Confirm that running `finalize_merge()` with InterProScan insertions preserves all original Bakta bytes, comments, and whitespace byte-for-byte outside recorded insertions.
-   - [ ] Confirm that re-running the merge on the resulting `.gbff` output yields `0` new insertions (byte-idempotency).
-2. **Schema & Manifest Compliance**:
-   - [ ] Validate that candidate decisions emit valid `entry_type: "candidate_decision"` matching `schemas/merge-manifest.v2.schema.json`.
-   - [ ] Ensure `source_id` is `"InterProScan"`.
-   - [ ] Ensure `evidence_class` values belong to `{"interpro_entry", "go_term", "member_db_signature", "producer_provenance"}`.
-   - [ ] Ensure `final_status` is one of `{"emitted", "shared_support", "supported_existing"}`.
-3. **Multi-Source Reconciled Parity**:
-   - [ ] For a joint run (`--baktfold`, `--kofamscan`, `--eggnog`, `--interproscan`), verify that identical GO terms from eggNOG and InterProScan do **not** duplicate `/db_xref="GO:..."` qualifiers in the output.
-   - [ ] Verify that `CandidateDecision.supporting_candidate_ids` correctly links the shared candidates in the output manifest.
-4. **Boundary Failure Testing**:
-   - [ ] Test rejection when a TSV query ID is absent from the base GBFF (must raise `MergeError`).
-   - [ ] Test rejection when the TSV sequence MD5 does not match the FAA protein MD5 (must raise `MergeError`).
-   - [ ] Test rejection when a corrupt InterPro accession (e.g. `IPR999` with fewer than 6 digits) is encountered.
-   - [ ] Test that Reactome and MetaCyc pathways are strictly absent from output feature qualifiers.
+### Phase 0: baseline and fixtures
 
-### Concrete Execution Commands for Testing Agents
+- Keep the current 146-test baseline passing.
+- Add small synthetic GBFF/FAA/TSV fixtures; do not put the 100+ MB evidence
+  files into ordinary unit-test setup.
+- Add a fixture with 13 columns, one with 15 columns, and one with a
+  source-decorated GO token.
+- Add deterministic hashes and expected counts to the test assertions, not to
+  production code.
+
+### Phase 1: validation and streaming parser
+
+- Add field-specific value validators to `value_rules.py`.
+- Implement strict row parsing, normalization, coordinate checks, and repeated
+  query consistency checks.
+- Test malformed column counts, MD5, numeric fields, coordinates, accessions,
+  unknown query IDs, duplicate base locus tags, FAA missing/mismatch, and
+  GBFF translation mismatch.
+
+### Phase 2: planner and provenance
+
+- Implement the aggregate/planner result object and evidence-row contract.
+- Add InterPro, GO, allowlisted member signatures, inference, and COMMENT
+  insertions through the existing insertion helpers.
+- Test base-value suppression, versioned Pfam overlap, exact insertion order,
+  unsupported member-DB rejection, and no-pathway-qualifier behavior.
+
+### Phase 3: reconciliation and context
+
+- Integrate source rows with `build_candidate_ledger()`.
+- Add the source-family and provenance-support behavior selected above.
+- Add exact duplicate collapse and cross-source `supporting_candidate_ids`
+  tests for an eggNOG/InterProScan GO pair.
+- Add standalone and unified context-report schema tests.
+
+### Phase 4: workflow and compatibility
+
+- Add unified CLI options and, if retained, the thin standalone wrapper.
+- Test `--version`, missing-input errors, required version, FAA/lineage gates,
+  `--context-report`, `--manifest`, and no-op reruns.
+- Update README, package entry points, CHANGELOG, and release validation docs.
+
+### Phase 5: real-data acceptance
+
+For C14 and SM, run the TSV against the pristine Bakta GBFF/FAA and record:
+
+- input SHA-256 values and parser row/query counts;
+- zero identity/translation mismatches;
+- output GenBank validation with `gbparse validate`;
+- JSON manifest schema validation and candidate-ledger validation;
+- absence of pathway tokens in feature qualifiers;
+- deterministic context-report contents; and
+- byte-identical second-run output with zero new insertions.
+
+For BK71A, run the parser and identity checks against the restored GBFF, but
+do not claim a reproducible functional enrichment acceptance run until a bound
+translation-evidence manifest and the approved imported-lineage policy are
+available. A failed-closed BK71A invocation is an expected acceptance case.
+
+## Required regression tests
+
+The implementation is not complete until tests cover all of the following:
+
+1. 13/14/15-column parsing and rejection of other shapes.
+2. MD5 parity against FAA and target GBFF translations.
+3. Unknown and duplicate query identity failures.
+4. Invalid InterPro, GO, Pfam, TIGRFAM, and CDD tokens.
+5. Existing InterPro/GO/Pfam values become `supported_existing` without new
+   qualifier lines.
+6. Versioned `PFAM:PFxxxxx.33` suppresses a bare `PFxxxxx` candidate, without
+   false prefix matches such as `PFxxxxx0`.
+7. InterPro/GO/member additions are emitted once and are byte-idempotent.
+8. Reactome/MetaCyc tokens never appear in GenBank feature qualifiers.
+9. Context-only pathway records remain available in the sidecar and retain the
+   source hash/row provenance.
+10. Same-target GO support from eggNOG and InterProScan collapses to one output
+    qualifier while both source candidates remain linked.
+11. Producer provenance is linked to valid InterProScan support and is removed
+    when all corresponding functional insertions are reconciled away.
+12. Restored BK71A input fails without the existing translation-evidence gate
+    and succeeds only with an explicitly valid lineage manifest/policy.
+13. The output passes `gbparse validate`; the manifest passes
+    `tests/test_manifest_schema.py` and `validate_candidate_ledger()`.
+
+## Acceptance commands
+
+Run these from a clean clone with Git LFS materialized. The current checkout's
+untracked follow-through bundle must not be staged or used as a release input.
 
 ```powershell
-# 1. Environment & Pre-Flight Check
-$env:PYTHONPATH="."
-python -m pytest -q --basetemp=".test-output/tmp" -o cache_dir=".test-output/cache"
-ruff check src tests tools
-python -m mypy src
-
-# 2. Standalone InterProScan Test Run (C14)
-python merge_interproscan_bakta.py `
-  data/C14/bakta/C14-NMZ.gbff `
-  data/C14/bakta/C14-NMZ.faa `
-  data/C14/evidence/interproscan/C14-NMZ.interproscan.tsv `
-  .test-output/C14-interpro-enriched.gbff `
-  --interproscan-version "5.59-91.0" `
-  --manifest .test-output/C14-interpro-enriched.manifest.json
-
-# 3. Schema Validation of Manifest
-python -c "
-import json, jsonschema
-schema = json.load(open('schemas/merge-manifest.v2.schema.json'))
-manifest = json.load(open('.test-output/C14-interpro-enriched.manifest.json'))
-jsonschema.validate(instance=manifest, schema=schema)
-print('Manifest schema validation successful!')
-"
-
-# 4. Byte Idempotency Check
-python merge_interproscan_bakta.py `
-  .test-output/C14-interpro-enriched.gbff `
-  data/C14/bakta/C14-NMZ.faa `
-  data/C14/evidence/interproscan/C14-NMZ.interproscan.tsv `
-  .test-output/C14-interpro-idempotent.gbff `
-  --interproscan-version "5.59-91.0" `
-  --manifest .test-output/C14-interpro-idempotent.manifest.json
-
-python -c "
-from enrich_bakta_lib.core.merge_engine import sha256_path
-hash1 = sha256_path('.test-output/C14-interpro-enriched.gbff')
-hash2 = sha256_path('.test-output/C14-interpro-idempotent.gbff')
-assert hash1 == hash2, f'Idempotency failed: {hash1} != {hash2}'
-print('Idempotency verified: byte-identical output across consecutive runs!')
-"
+$env:PYTHONDONTWRITEBYTECODE = 1
+python -m pytest -q --basetemp .test-output/interproscan-test -p no:cacheprovider
+python -m ruff check .
+python -m ruff format --check .
+python -m mypy
+python tools/validate_dataset_manifest.py docs/data/MANIFEST.json
+python tools/validate_dataset_manifest.py docs/data/PUBLISHED-MANIFEST.json
 ```
+
+After implementation, the canonical C14 smoke run is:
+
+```powershell
+python enrich_bakta.py `
+  --bakta data/C14/bakta/C14-NMZ.gbff `
+  --faa data/C14/bakta/C14-NMZ.faa `
+  --interproscan data/C14/evidence/interproscan/C14-NMZ.interproscan.tsv `
+  --interproscan-version 5.59-91.0 `
+  --output .test-output/C14-interpro-enriched.gbff `
+  --manifest .test-output/C14-interpro-enriched.manifest.json `
+  --context-report .test-output/C14-interpro-context.json
+```
+
+The SM run is identical with the SM paths. Validate each output with:
+
+```powershell
+gbparse validate .test-output/C14-interpro-enriched.gbff --format json
+python tools/validate_dataset_manifest.py docs/data/PUBLISHED-MANIFEST.json
+python -m pytest -q tests/test_manifest_schema.py tests/test_merge_pipeline.py
+```
+
+The idempotency gate must compare the output bytes from two runs and assert
+zero new insertions on the second run. It must also inspect the parsed output,
+not merely compare a manifest count, to prove that no pathway token entered a
+feature qualifier.
+
+## Release and handoff
+
+This feature adds a new evidence source and CLI surface. The recommended
+release target is `0.4.0`, with the exact version decision recorded before
+implementation. Update the package version, CHANGELOG, README, CI matrix, and
+published acceptance record together.
+
+The plan is ready for implementation after these refinements. It does not
+claim that InterProScan enrichment is already implemented. The untracked
+`enrich-bakta-followthrough-bundle-2026-10-04/` directory is pre-existing local
+review material and must remain outside any implementation commit unless the
+owner explicitly requests otherwise.
