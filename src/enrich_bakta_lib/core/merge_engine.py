@@ -667,9 +667,11 @@ class TranslationEvidenceLedger(dict[str, TranslationEvidence]):
         values: Mapping[str, TranslationEvidence],
         *,
         required_query_ids: Iterable[str] = (),
+        manifest_sha256: str = "",
     ) -> None:
         super().__init__(values)
         self.required_query_ids = frozenset(required_query_ids)
+        self.manifest_sha256 = manifest_sha256
 
 
 def has_translation_evidence_marker(data: bytes) -> bool:
@@ -686,7 +688,8 @@ def load_translation_evidence(
             "cannot preserve the structured evidence ledger"
         )
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        snapshot = path.read_bytes()
+        payload = json.loads(snapshot.decode("utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise MergeError(
             f"cannot read translation evidence manifest {path}: {exc}"
@@ -741,6 +744,60 @@ def load_translation_evidence(
         )
         if any(key not in raw for key in required):
             raise MergeError(f"translation evidence for {query_id!r} is incomplete")
+        if (
+            type(raw["artifact_sequence_match"]) is not bool
+            or raw["artifact_sequence_match"] is not True
+        ):
+            raise MergeError(
+                f"translation evidence for {query_id!r} requires a true boolean artifact match"
+            )
+        if not isinstance(raw["origin"], str) or raw["origin"] not in {
+            "imported_faa",
+            "genomically_validated",
+        }:
+            raise MergeError(
+                f"translation evidence for {query_id!r} has an unknown origin"
+            )
+        if not isinstance(raw["genomic_validation_status"], str) or raw[
+            "genomic_validation_status"
+        ] not in {
+            "passed",
+            "failed",
+            "unresolved",
+            "not_attempted",
+        }:
+            raise MergeError(
+                f"translation evidence for {query_id!r} has an invalid genomic status"
+            )
+        expected_policy = (
+            "import-faa" if raw["origin"] == "imported_faa" else "validated-only"
+        )
+        if raw["restoration_policy"] != expected_policy or (
+            raw["origin"] == "genomically_validated"
+            and raw["genomic_validation_status"] != "passed"
+        ):
+            raise MergeError(
+                f"translation evidence for {query_id!r} has inconsistent origin/policy/status"
+            )
+        for key in (
+            "protein_sha256",
+            "original_base_sha256",
+            "faa_sha256",
+            "bound_output_sha256",
+        ):
+            if (
+                not isinstance(raw[key], str)
+                or re.fullmatch(r"[0-9a-f]{64}", raw[key]) is None
+            ):
+                raise MergeError(
+                    f"translation evidence for {query_id!r} has an invalid {key}"
+                )
+        if not isinstance(raw.get("producer_lineage"), dict) or not isinstance(
+            raw["validation_reason"], str
+        ):
+            raise MergeError(
+                f"translation evidence for {query_id!r} has invalid lineage/reason fields"
+            )
         try:
             evidence = TranslationEvidence(
                 feature_uid=str(raw["feature_uid"]),
@@ -775,6 +832,14 @@ def load_translation_evidence(
             raise MergeError(
                 f"translation evidence for {query_id!r} has the wrong feature identity"
             )
+        translations = cds[query_id].values("translation")
+        if (
+            len(translations) != 1
+            or protein_sha256(translations[0]) != evidence.protein_sha256
+        ):
+            raise MergeError(
+                f"translation evidence for {query_id!r} disagrees with the encoded protein"
+            )
         result[query_id] = evidence
     if not result:
         raise MergeError(
@@ -795,7 +860,40 @@ def load_translation_evidence(
             raise MergeError(
                 "translation evidence manifest metadata and entries disagree"
             )
-    return TranslationEvidenceLedger(result, required_query_ids=required_query_ids)
+        if any(
+            metadata_evidence[query_id] != evidence.as_dict()
+            for query_id, evidence in result.items()
+        ):
+            raise MergeError(
+                "translation evidence manifest metadata and entries disagree in their values"
+            )
+    if has_translation_evidence_marker(base.data):
+        marker_ids: set[str] = set()
+        for record in base.records:
+            prefix = base.data[record.start : record.features_offset].decode("utf-8")
+            content = "\n".join(line[12:] for line in prefix.splitlines())
+            for block in content.split(TRANSLATION_EVIDENCE_MARKER)[1:]:
+                match = re.search(
+                    r"Restored CDSs:\s*(.*?)\s*Original base SHA-256:", block, re.DOTALL
+                )
+                if match is None:
+                    raise MergeError(
+                        "translation evidence marker lacks a restored-CDS list"
+                    )
+                marker_ids.update(
+                    token.strip()
+                    for token in match.group(1).replace("\n", " ").split(",")
+                )
+        if not marker_ids or not marker_ids.issubset(result):
+            raise MergeError(
+                "translation evidence manifest omits targets identified by the GBFF marker"
+            )
+        required_query_ids.update(marker_ids)
+    return TranslationEvidenceLedger(
+        result,
+        required_query_ids=required_query_ids,
+        manifest_sha256=sha256_bytes(snapshot),
+    )
 
 
 def protein_sha256(sequence: str) -> str:
@@ -1112,7 +1210,7 @@ def reconcile_insertions(
         filtered.append(item)
 
     def source_family(source: str) -> str:
-        return source.lower().removesuffix(" provenance")
+        return source.lower().removesuffix(" provenance").removesuffix(" hit evidence")
 
     surviving_functional = {
         (
@@ -1125,6 +1223,23 @@ def reconcile_insertions(
     }
     provenance_filtered: list[Insertion] = []
     for item in filtered:
+        if item.source == "Baktfold provenance" and item.qualifier != "COMMENT":
+            evidence_qualifier = (
+                "gene"
+                if item.value.startswith("Baktfold gene-symbol evidence:")
+                else "EC_number"
+                if item.value.startswith("Baktfold functional-annotation evidence:")
+                else "db_xref"
+            )
+            if not any(
+                other.source == "Baktfold"
+                and other.record == item.record
+                and other.locus_tag == item.locus_tag
+                and other.feature_type == item.feature_type
+                and other.qualifier == evidence_qualifier
+                for other in filtered
+            ):
+                continue
         if (
             item.qualifier != "COMMENT"
             and _is_provenance_source(item.source)
@@ -1405,6 +1520,12 @@ def finalize_merge(
     sidecar_path: Path | None = None,
     sidecar_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if has_translation_evidence_marker(base_data) and not metadata.get(
+        "translation_evidence"
+    ):
+        raise MergeError(
+            "restored input requires --translation-evidence-manifest and preserved translation evidence"
+        )
     inputs = [base_path, *other_inputs]
     if paths_collide(output_path, inputs):
         raise MergeError("output path must differ from every input path")
@@ -1462,6 +1583,23 @@ def finalize_merge(
         rows = insertion_rows(applied)
         if evidence_rows is not None:
             rows = [*_bind_translation_evidence(evidence_rows, output_sha256), *rows]
+        represented = {
+            row.get("query_id")
+            for row in rows
+            if row.get("entry_type") == "translation_restoration"
+        }
+        for query_id, evidence in sorted(
+            metadata.get("translation_evidence", {}).items()
+        ):
+            if query_id not in represented:
+                rows.append(
+                    {
+                        "entry_type": "translation_restoration",
+                        "query_id": query_id,
+                        "status": "carried_forward",
+                        "translation_evidence": evidence,
+                    }
+                )
         artifacts.append((manifest_path, manifest_bytes(manifest_path, metadata, rows)))
     if sidecar_path is not None and sidecar_payload is not None:
         artifacts.append((sidecar_path, json_sidecar_bytes(sidecar_payload)))

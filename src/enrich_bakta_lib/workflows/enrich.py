@@ -66,18 +66,11 @@ def enrich(
         raise MergeError("--eggnog-schema requires --eggnog")
     if context_report_path is not None and eggnog_path is None:
         raise MergeError("--context-report requires --eggnog")
-    if translation_evidence_manifest is not None and not (
-        kofamscan_path or eggnog_path
-    ):
-        raise MergeError(
-            "--translation-evidence-manifest requires --kofamscan or --eggnog"
-        )
     base_data = read_input_bytes(bakta_path, "Bakta")
     validate_genbank_semantics(base_data, "Bakta input")
     base = parse_genbank_bytes(base_data, "Bakta input")
     if (
         has_translation_evidence_marker(base_data)
-        and (kofamscan_path or eggnog_path)
         and translation_evidence_manifest is None
     ):
         raise MergeError(
@@ -96,6 +89,22 @@ def enrich(
         "operation": "unified-enrichment",
         "merge_timestamp": merge_timestamp or "",
         "faa_sha256": sha256_bytes(faa_data) if faa_path else "",
+        "translation_evidence": {
+            query: evidence.as_dict()
+            for query, evidence in (translation_evidence or {}).items()
+        },
+        "translation_evidence_parent_sha256": getattr(
+            translation_evidence, "manifest_sha256", ""
+        ),
+        "translation_evidence_manifest": str(translation_evidence_manifest)
+        if translation_evidence_manifest
+        else "",
+        "allow_imported_translations": allow_imported_translations,
+        "policies": {
+            "add_comment_note": add_comment_note,
+            "add_feature_provenance": add_feature_provenance,
+            "clean_gene_suffix": clean_gene_suffix,
+        },
     }
     other_inputs: list[Path] = []
     if faa_path:
@@ -115,10 +124,13 @@ def enrich(
             merge_timestamp=merge_timestamp,
             starting_order=0,
             invalid_ec_policy=baktfold_invalid_ec_policy,
+            translation_evidence=translation_evidence,
+            allow_imported_translations=allow_imported_translations,
         )
         insertions.extend(planned)
         evidence_rows.extend(stats.get("invalid_ec_values", []))
         metadata["baktfold_sha256"] = stats["baktfold_sha256"]
+        metadata["baktfold_parity"] = stats["parity"]
         metadata["baktfold_version"] = stats["baktfold_version"]
         metadata["baktfold_version_detected"] = stats["baktfold_version_detected"]
         metadata["baktfold_translation_mismatch_policy"] = stats[

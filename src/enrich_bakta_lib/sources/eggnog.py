@@ -287,7 +287,13 @@ def _is_recognized_producer_comment(line: str) -> bool:
         return True
     if body.startswith(("/", "applied filters:")):
         return True
-    return body[:3] in {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+    return (
+        re.fullmatch(
+            r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z]{2}\s+\d{1,2} \d{2}:\d{2}:\d{2} \d{4}",
+            body,
+        )
+        is not None
+    )
 
 
 def parse_eggnog_tsv(
@@ -309,6 +315,10 @@ def parse_eggnog_tsv(
         if not line:
             continue
         if line.startswith("##"):
+            if columns is not None and len(line.split("\t")) == len(columns):
+                raise MergeError(
+                    f"eggNOG row {row_number}: data row begins with reserved '#'"
+                )
             match = VERSION_RE.match(line)
             if match:
                 if hits:
@@ -431,6 +441,8 @@ def parse_eggnog_xlsx(
         columns = [
             str(cell.value) if cell.value is not None else "" for cell in header_cells
         ]
+        # Official XLSX exports use 'query'; TSV uses '#query'.
+        columns = ["#query" if column == "query" else column for column in columns]
         if len(columns) != len(set(columns)):
             raise MergeError("eggNOG XLSX header contains duplicate columns")
         if any(not column.strip() for column in columns):
@@ -867,7 +879,16 @@ def plan_eggnog_additions(
                 status = "filtered_confidence"
             elif qualifier == "gene":
                 if feature_genes or paired_genes:
-                    status = "existing_gene"
+                    status = (
+                        "existing_gene"
+                        if set(feature_genes) == {value}
+                        and set(paired_genes) == {value}
+                        else "unresolved_identity"
+                        if feature_genes
+                        and paired_genes
+                        and set(feature_genes) != set(paired_genes)
+                        else "suppressed_authoritative_gene"
+                    )
                 elif not paired:
                     status = "unpaired_gene"
                 else:
@@ -935,6 +956,14 @@ def plan_eggnog_additions(
                     "seed_ortholog": hit.seed_ortholog,
                     "e_value": hit.evalue,
                     "score": hit.score,
+                    "target_feature_uids": [
+                        feature_uid(target)
+                        for target in (
+                            (paired, feature)
+                            if qualifier == "gene" and paired
+                            else (feature,)
+                        )
+                    ],
                 }
             )
         if hit.query_id in emitted_by_query and add_feature_provenance:
@@ -1127,6 +1156,18 @@ def merge(
                 else ""
             ),
             "allow_imported_translations": allow_imported_translations,
+            "translation_evidence": {
+                query: evidence.as_dict()
+                for query, evidence in (translation_evidence or {}).items()
+            },
+            "translation_evidence_parent_sha256": getattr(
+                translation_evidence, "manifest_sha256", ""
+            ),
+            "policies": {
+                "add_comment_note": add_comment_note,
+                "add_feature_provenance": add_feature_provenance,
+                "clean_gene_suffix": clean_gene_suffix,
+            },
             **candidate_counts,
         },
     )

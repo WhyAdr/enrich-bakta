@@ -14,6 +14,7 @@ import collections
 import json
 import re
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -26,14 +27,20 @@ from enrich_bakta_lib.core.merge_engine import (
     Insertion,
     MergeError,
     RawDocument,
+    TranslationEvidence,
+    cds_by_locus,
     comment_insertion,
     finalize_merge,
+    has_translation_evidence_marker,
     index_unique_features,
+    load_translation_evidence,
+    normalize_protein,
     parse_genbank_bytes,
     qualifier_insertion,
     read_input_bytes,
     sha256_bytes,
     strict_parity_check,
+    validate_faa_gbff,
     validate_genbank_semantics,
 )
 from enrich_bakta_lib.sources.value_rules import (
@@ -129,6 +136,8 @@ def plan_baktfold_additions(
     merge_timestamp: str | None = None,
     starting_order: int = 0,
     invalid_ec_policy: str = "reject",
+    translation_evidence: Mapping[str, TranslationEvidence] | None = None,
+    allow_imported_translations: bool = False,
 ) -> tuple[list[Insertion], dict[str, Any]]:
     """Validate Baktfold parity and return the complete insertion allowlist."""
     if invalid_ec_policy not in {"reject", "skip"}:
@@ -136,6 +145,24 @@ def plan_baktfold_additions(
             f"invalid Baktfold EC policy {invalid_ec_policy!r}; expected 'reject' or 'skip'"
         )
     parity = strict_parity_check(base, baktfold)
+    if has_translation_evidence_marker(base.data) and translation_evidence is None:
+        raise MergeError(
+            "restored input requires --translation-evidence-manifest for Baktfold planning"
+        )
+    if translation_evidence:
+        cds = cds_by_locus(base)
+        encoded_proteins = {
+            query: normalize_protein(cds[query].values("translation")[0])
+            for query in translation_evidence
+        }
+        validate_faa_gbff(
+            base,
+            encoded_proteins,
+            translation_evidence,
+            source_name="Baktfold",
+            translation_evidence=translation_evidence,
+            allow_imported_translations=allow_imported_translations,
+        )
     source_index = index_unique_features(baktfold.features, label="Baktfold")
     # Also reject duplicates in the base before matching.
     index_unique_features(base.features, label="Bakta base")
@@ -349,12 +376,19 @@ def graft(
     add_feature_provenance: bool = True,
     merge_timestamp: str | None = None,
     invalid_ec_policy: str = "reject",
+    translation_evidence_manifest: Path | None = None,
+    allow_imported_translations: bool = False,
 ) -> dict[str, Any]:
     bakta_data = read_input_bytes(bakta_path, "Bakta")
     baktfold_data = read_input_bytes(baktfold_path, "Baktfold")
     validate_genbank_semantics(bakta_data, "Bakta input")
     validate_genbank_semantics(baktfold_data, "Baktfold input")
     base = parse_genbank_bytes(bakta_data, "Bakta input")
+    translation_evidence = (
+        load_translation_evidence(translation_evidence_manifest, base)
+        if translation_evidence_manifest
+        else None
+    )
     source = parse_genbank_bytes(baktfold_data, "Baktfold input")
     insertions, stats = plan_baktfold_additions(
         base,
@@ -364,6 +398,8 @@ def graft(
         add_comment_note=add_comment_note,
         merge_timestamp=merge_timestamp,
         invalid_ec_policy=invalid_ec_policy,
+        translation_evidence=translation_evidence,
+        allow_imported_translations=allow_imported_translations,
     )
     candidate_rows, candidate_counts = build_candidate_ledger(
         base,
@@ -378,7 +414,10 @@ def graft(
         base_path=bakta_path,
         base_data=bakta_data,
         output_path=output_path,
-        other_inputs=[baktfold_path],
+        other_inputs=[
+            baktfold_path,
+            *([translation_evidence_manifest] if translation_evidence_manifest else []),
+        ],
         insertions=insertions,
         manifest_path=manifest_path,
         evidence_rows=candidate_rows,
@@ -402,6 +441,19 @@ def graft(
             "invalid_ec_values": stats["invalid_ec_values"],
             "invalid_ec_value_count": stats["invalid_ec_value_count"],
             **candidate_counts,
+            "translation_evidence": {
+                query: evidence.as_dict()
+                for query, evidence in (translation_evidence or {}).items()
+            },
+            "translation_evidence_parent_sha256": getattr(
+                translation_evidence, "manifest_sha256", ""
+            ),
+            "allow_imported_translations": allow_imported_translations,
+            "policies": {
+                "add_comment_note": add_comment_note,
+                "add_feature_provenance": add_feature_provenance,
+            },
+            "parity": stats["parity"],
         },
     )
     return {**stats, **final}
@@ -426,6 +478,8 @@ def main() -> int:
     parser.add_argument("output", type=Path, help="new merged .gbff")
     parser.add_argument("--manifest", type=Path, help="TSV or .json insertion manifest")
     parser.add_argument("--no-comment-note", action="store_true")
+    parser.add_argument("--translation-evidence-manifest", type=Path)
+    parser.add_argument("--allow-imported-translations", action="store_true")
     parser.add_argument(
         "--no-feature-provenance",
         "--no-inference-provenance",
@@ -462,6 +516,8 @@ def main() -> int:
             add_feature_provenance=not args.no_feature_provenance,
             merge_timestamp=args.merge_timestamp,
             invalid_ec_policy=args.baktfold_invalid_ec_policy,
+            translation_evidence_manifest=args.translation_evidence_manifest,
+            allow_imported_translations=args.allow_imported_translations,
         )
     except MergeError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

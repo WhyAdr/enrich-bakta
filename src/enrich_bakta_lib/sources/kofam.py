@@ -244,7 +244,7 @@ def plan_kofam_additions(
                     feature,
                     "note",
                     note,
-                    "KofamScan provenance",
+                    "KofamScan hit evidence",
                     f"row {hit.row_number}",
                     order,
                 )
@@ -288,6 +288,7 @@ def plan_kofam_additions(
                 "e_value": hit.e_value,
                 "definition": hit.definition,
                 "ko_already_present": already_present,
+                "status": "existing" if already_present else "planned",
                 "emitted_qualifiers": " | ".join(emitted),
                 "kofam_row": hit.row_number,
             }
@@ -385,6 +386,8 @@ def merge(
             add_comment_note=add_comment_note,
             merge_timestamp=merge_timestamp,
             invalid_ec_policy=baktfold_invalid_ec_policy,
+            translation_evidence=translation_evidence,
+            allow_imported_translations=allow_imported_translations,
         )
         insertions.extend(baktfold_insertions)
         combined_stats["baktfold"] = baktfold_stats
@@ -464,6 +467,7 @@ def merge(
                 )
             ),
             "baktfold_invalid_ec_policy": baktfold_invalid_ec_policy,
+            "baktfold_parity": combined_stats.get("baktfold", {}).get("parity", {}),
             "baktfold_invalid_ec_values": combined_stats.get("baktfold", {}).get(
                 "invalid_ec_values", []
             ),
@@ -478,6 +482,17 @@ def merge(
                 else ""
             ),
             "allow_imported_translations": allow_imported_translations,
+            "translation_evidence": {
+                query: evidence.as_dict()
+                for query, evidence in (translation_evidence or {}).items()
+            },
+            "translation_evidence_parent_sha256": getattr(
+                translation_evidence, "manifest_sha256", ""
+            ),
+            "policies": {
+                "add_comment_note": add_comment_note,
+                "add_feature_provenance": add_feature_provenance,
+            },
             **candidate_counts,
         },
     )

@@ -9,7 +9,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from Bio.Data.CodonTable import TranslationError
 from Bio.Seq import Seq
+from Bio.SeqFeature import ExactPosition
 
 from enrich_bakta_lib.core.merge_engine import (
     TOOL_VERSION,
@@ -22,6 +24,8 @@ from enrich_bakta_lib.core.merge_engine import (
     comment_insertion,
     feature_uid,
     finalize_merge,
+    has_translation_evidence_marker,
+    load_translation_evidence,
     normalize_protein,
     parse_faa,
     parse_genbank_bytes,
@@ -55,6 +59,23 @@ def _genomic_translation_check(
     location = feature.semantic_location
     if location is None:
         return "unresolved", "semantic CDS location is unavailable"
+    if any(
+        key in feature.qualifiers
+        for key in ("exception", "transl_except", "ribosomal_slippage")
+    ):
+        return "unresolved", "exceptional CDS translation model is unsupported"
+    if getattr(location, "operator", "join") != "join":
+        return "unresolved", "CDS location operator is unsupported"
+    record_length = len(base.records[feature.record_index].sequence)
+    for part in location.parts:
+        if part.ref is not None or part.ref_db is not None:
+            return "unresolved", "remote CDS location is unsupported"
+        if type(part.start) is not ExactPosition or type(part.end) is not ExactPosition:
+            return "unresolved", "partial or fuzzy CDS location is unsupported"
+        if not 0 <= int(part.start) < int(part.end) <= record_length:
+            return "unresolved", "CDS location lies outside the source record"
+        if part.strand not in (-1, 1) or part.strand != location.strand:
+            return "unresolved", "CDS location strand is unsupported"
     codon_start_values = feature.values("codon_start")
     transl_table_values = feature.values("transl_table")
     if len(codon_start_values) != 1 or len(transl_table_values) != 1:
@@ -66,13 +87,21 @@ def _genomic_translation_check(
         return "unresolved", "codon_start and transl_table must be integers"
     if codon_start not in (1, 2, 3) or transl_table < 1:
         return "unresolved", "codon_start or transl_table is outside supported values"
+    if codon_start != 1:
+        return "unresolved", "offset CDS translation requires a supported partial model"
     try:
         sequence = Seq(base.records[feature.record_index].sequence.decode("ascii"))
         coding = location.extract(sequence)[codon_start - 1 :]
         if len(coding) == 0 or len(coding) % 3:
             return "unresolved", "CDS sequence is incomplete after codon_start"
-        translated = normalize_protein(str(coding.translate(table=transl_table)))
-    except (UnicodeDecodeError, ValueError, TypeError) as exc:
+        translated = str(coding.translate(table=transl_table, cds=True))
+    except (
+        UnicodeDecodeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        TranslationError,
+    ) as exc:
         return "unresolved", f"genomic translation is unsupported: {exc}"
     if translated != protein:
         return "failed", "FAA protein differs from the independent genomic translation"
@@ -87,6 +116,7 @@ def plan_translation_restoration(
     faa_data: bytes,
     starting_order: int = 0,
     translation_policy: str = "validated-only",
+    translation_evidence: dict[str, TranslationEvidence] | None = None,
 ) -> tuple[list[Insertion], list[dict[str, Any]], dict[str, Any]]:
     """Plan policy-controlled FAA-backed translations for pseudogene CDSs."""
     if translation_policy not in TRANSLATION_POLICIES:
@@ -112,7 +142,7 @@ def plan_translation_restoration(
     base_hash = sha256_bytes(base.data)
     faa_hash = sha256_bytes(faa_data)
     restored: list[str] = []
-    translation_evidence: dict[str, TranslationEvidence] = {}
+    origin_evidence: dict[str, TranslationEvidence] = dict(translation_evidence or {})
     translated_queries = [
         query_id
         for query_id in sorted(requested)
@@ -124,6 +154,8 @@ def plan_translation_restoration(
             proteins,
             translated_queries,
             source_name="eggNOG translation restoration",
+            translation_evidence=translation_evidence,
+            allow_imported_translations=True,
         )
     for query_id in sorted(requested):
         feature = cds[query_id]
@@ -137,6 +169,20 @@ def plan_translation_restoration(
                 f"refusing to restore {query_id!r}: empty /translation qualifier"
             )
         if translations:
+            evidence_rows.append(
+                {
+                    "entry_type": "translation_validation",
+                    "query_id": query_id,
+                    "status": "supported_existing",
+                    "artifact_sequence_match": True,
+                    "genomic_validation_status": "not_attempted",
+                    "translation_origin": (
+                        origin_evidence[query_id].origin
+                        if query_id in origin_evidence
+                        else "gbff_encoded"
+                    ),
+                }
+            )
             continue
         if (
             "pseudo" not in feature.qualifiers
@@ -187,7 +233,7 @@ def plan_translation_restoration(
         )
         order += 1
         restored.append(query_id)
-        translation_evidence[query_id] = evidence
+        origin_evidence[query_id] = evidence
         evidence_rows.append(
             {
                 "entry_type": "translation_restoration",
@@ -237,7 +283,7 @@ def plan_translation_restoration(
             "translation_policy": translation_policy,
             "translation_evidence": {
                 query_id: evidence.as_dict()
-                for query_id, evidence in translation_evidence.items()
+                for query_id, evidence in origin_evidence.items()
             },
         },
     )
@@ -253,6 +299,7 @@ def restore(
     eggnog_version: str | None = None,
     eggnog_schema: str | None = None,
     translation_policy: str = "validated-only",
+    translation_evidence_manifest: Path | None = None,
 ) -> dict[str, Any]:
     _base, base_data, _faa_data, table, insertions, evidence_rows, stats = (
         prepare_restoration(
@@ -262,13 +309,18 @@ def restore(
             eggnog_version=eggnog_version,
             eggnog_schema=eggnog_schema,
             translation_policy=translation_policy,
+            translation_evidence_manifest=translation_evidence_manifest,
         )
     )
     final = finalize_merge(
         base_path=bakta_path,
         base_data=base_data,
         output_path=output_path,
-        other_inputs=[faa_path, eggnog_path],
+        other_inputs=[
+            faa_path,
+            eggnog_path,
+            *([translation_evidence_manifest] if translation_evidence_manifest else []),
+        ],
         insertions=insertions,
         manifest_path=manifest_path,
         evidence_rows=evidence_rows,
@@ -283,6 +335,9 @@ def restore(
             "restored_translation_count": stats["restored_translation_count"],
             "translation_policy": stats["translation_policy"],
             "translation_evidence": stats["translation_evidence"],
+            "translation_evidence_parent_sha256": stats[
+                "translation_evidence_parent_sha256"
+            ],
         },
     )
     result = {**stats, **final}
@@ -304,6 +359,7 @@ def prepare_restoration(
     eggnog_version: str | None = None,
     eggnog_schema: str | None = None,
     translation_policy: str = "validated-only",
+    translation_evidence_manifest: Path | None = None,
 ) -> tuple[
     RawDocument,
     bytes,
@@ -325,14 +381,30 @@ def prepare_restoration(
         schema_id=eggnog_schema,
     )
     base = parse_genbank_bytes(base_data, "Bakta input")
+    if (
+        has_translation_evidence_marker(base_data)
+        and translation_evidence_manifest is None
+    ):
+        raise MergeError(
+            "restored input requires --translation-evidence-manifest for restoration reruns"
+        )
+    origin_evidence = (
+        load_translation_evidence(translation_evidence_manifest, base)
+        if translation_evidence_manifest
+        else None
+    )
     insertions, evidence_rows, stats = plan_translation_restoration(
         base,
         parse_faa(faa_data),
         table,
         faa_data=faa_data,
         translation_policy=translation_policy,
+        translation_evidence=origin_evidence,
     )
     stats["eggnog_sha256"] = sha256_bytes(eggnog_data)
+    stats["translation_evidence_parent_sha256"] = getattr(
+        origin_evidence, "manifest_sha256", ""
+    )
     return base, base_data, faa_data, table, insertions, evidence_rows, stats
 
 
@@ -350,6 +422,7 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--eggnog-version")
     parser.add_argument("--eggnog-schema")
+    parser.add_argument("--translation-evidence-manifest", type=Path)
     parser.add_argument(
         "--translation-policy",
         choices=TRANSLATION_POLICIES,
@@ -378,6 +451,7 @@ def main() -> int:
                 eggnog_version=args.eggnog_version,
                 eggnog_schema=args.eggnog_schema,
                 translation_policy=args.translation_policy or "validated-only",
+                translation_evidence_manifest=args.translation_evidence_manifest,
             )
         else:
             assert args.output is not None
@@ -390,6 +464,7 @@ def main() -> int:
                 eggnog_version=args.eggnog_version,
                 eggnog_schema=args.eggnog_schema,
                 translation_policy=args.translation_policy or "validated-only",
+                translation_evidence_manifest=args.translation_evidence_manifest,
             )
     except MergeError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

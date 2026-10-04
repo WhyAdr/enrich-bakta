@@ -90,6 +90,10 @@ def validate_preferred_name(value: str, *, clean_suffix: bool) -> ValueValidatio
         return ValueValidationResult(
             value, None, "invalid", "preferred name is empty after normalization"
         )
+    if candidate in MISSING_VALUES:
+        return ValueValidationResult(
+            value, None, "missing", "preferred name is missing after normalization"
+        )
     return ValueValidationResult(value, candidate, "valid", "preferred name accepted")
 
 

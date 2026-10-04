@@ -137,6 +137,7 @@ def _row_field_and_value(row: Mapping[str, Any]) -> tuple[str, str, str]:
         "CAZy": "db_xref",
         "PFAMs": "note",
         "eggNOG_OGs": "note",
+        "COG_category": "note",
     }.get(field, str(row.get("qualifier", field)))
     value = str(row.get("normalized_value", row.get("value", "")))
     return field, qualifier, value
@@ -251,12 +252,18 @@ def build_candidate_ledger(
                 for insertion_id in final_by_semantic.get(_semantic_key(item), [])
             }
         )
-        if emitted:
-            final_status = "emitted" if final_ids else "suppressed_conflict"
-        elif row_status in {"existing", "existing_gene"}:
+        if row_status in {"existing", "existing_gene"}:
             final_status = "supported_existing"
+        elif emitted or matches:
+            final_status = "emitted" if final_ids else "suppressed_conflict"
         else:
             final_status = row_status or "not_applicable"
+        row["planned_status"] = planned_status
+        row["planned_emitted_qualifiers"] = row.get("emitted_qualifiers", "")
+        row["final_status"] = final_status
+        row["status"] = final_status
+        if final_status not in {"emitted", "shared_support"}:
+            row["emitted_qualifiers"] = ""
         payload = {
             "entry_type": entry_type,
             "source_sha256": source_sha,
@@ -294,8 +301,8 @@ def build_candidate_ledger(
             )
         )
 
-    grouped: dict[tuple[str, str, str, str, str, str], list[Insertion]] = defaultdict(
-        list
+    grouped: dict[tuple[str, str, str, str, str, str, str, str], list[Insertion]] = (
+        defaultdict(list)
     )
     for item in planned:
         if id(item) in covered:
@@ -306,6 +313,8 @@ def build_candidate_ledger(
                 source_id,
                 _source_hash(source_id, source_hashes),
                 item.record,
+                item.locus_tag,
+                "paired" if item.qualifier == "gene" else item.feature_type,
                 item.qualifier,
                 item.value,
                 item.source_value,
@@ -315,6 +324,8 @@ def build_candidate_ledger(
         source_id,
         source_sha,
         record,
+        locus_tag,
+        feature_scope,
         qualifier,
         value,
         raw_value,
@@ -336,6 +347,8 @@ def build_candidate_ledger(
         payload = {
             "source_sha256": source_sha,
             "record": record,
+            "locus_tag": locus_tag,
+            "feature_scope": feature_scope,
             "field": qualifier,
             "raw_value": raw_value,
             "normalized_value": value,
@@ -388,7 +401,7 @@ def build_candidate_ledger(
             if other.candidate_id != candidate.candidate_id
         }
         candidate.supporting_candidate_ids = tuple(sorted(supporting))
-        if len(supporting) > 1 and candidate.final_status == "emitted":
+        if supporting and candidate.final_status == "emitted":
             candidate.final_status = "shared_support"
 
     functional_support: dict[tuple[str, str], set[str]] = defaultdict(set)
@@ -438,6 +451,20 @@ def build_candidate_ledger(
             }
         ),
         "candidate_ledger_schema": "enrich-bakta.candidate-ledger.v2",
+        "functional_candidate_count": sum(
+            not candidate.confidence_diagnostics.get("provenance", False)
+            for candidate in candidates
+        ),
+        "provenance_candidate_count": sum(
+            bool(candidate.confidence_diagnostics.get("provenance"))
+            for candidate in candidates
+        ),
+        "functional_insertion_count": sum(
+            not _is_provenance_insertion(item) for item in final
+        ),
+        "provenance_insertion_count": sum(
+            _is_provenance_insertion(item) for item in final
+        ),
     }
     return rows, counts
 
@@ -454,6 +481,11 @@ def validate_candidate_ledger(
     if len(insertion_by_id) != len(final_items):
         raise MergeError("candidate ledger validation found duplicate insertion IDs")
     feature_index = _feature_index(base) if base is not None else {}
+    feature_by_uid = (
+        {feature_uid(feature): feature for feature in base.features}
+        if base is not None
+        else {}
+    )
     valid_feature_uids = set(feature_index.values()) if base is not None else None
     ledger_rows = list(rows)
     seen: set[str] = set()
@@ -530,6 +562,42 @@ def validate_candidate_ledger(
                         f"candidate {candidate_id!r} references the wrong value"
                     )
                 referenced_final_ids.add(reference)
+            supported_targets = {
+                _insertion_feature_uid(insertion_by_id[reference], feature_index)
+                for reference in referenced
+            }
+            if base is not None:
+                supported_targets.update(
+                    target
+                    for target in targets
+                    if normalized_value in feature_by_uid[target].values(qualifier)
+                )
+                if set(targets) != supported_targets:
+                    raise MergeError(
+                        f"candidate {candidate_id!r} lacks support on every target"
+                    )
+        if status == "supported_existing" and base is not None:
+            from enrich_bakta_lib.sources.value_rules import structured_note_tokens
+
+            for target in targets:
+                feature = feature_by_uid[target]
+                values = set(feature.values(qualifier))
+                if qualifier == "db_xref":
+                    values.update(
+                        token
+                        for note in feature.values("note")
+                        for token in structured_note_tokens(note)
+                    )
+                if qualifier == "EC_number":
+                    values.update(
+                        value.removeprefix("EC:")
+                        for value in feature.values("db_xref")
+                        if value.startswith("EC:")
+                    )
+                if normalized_value not in values:
+                    raise MergeError(
+                        f"supported-existing candidate {candidate_id!r} is absent on its target"
+                    )
         if status == "suppressed_conflict" and referenced:
             raise MergeError(
                 f"suppressed candidate {candidate_id!r} still references insertions"
