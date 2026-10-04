@@ -97,3 +97,12 @@ seconds (chain checks). The checked-in durable gates completed in 302 and 436
 seconds respectively on this machine. Correctness and reproducibility passed;
 these variable Windows timings are recorded as observations, not a performance
 acceptance claim. GitHub's Windows/Linux jobs remain the remote execution gate.
+
+The accepted C14/SM contract is now machine-readable in
+[`followthrough-scientific-baseline.json`](followthrough-scientific-baseline.json).
+The durable gates fail on drift in input hashes or recorded producers, tool or
+policy versions, first-pass output hashes and counts, imported query IDs or
+origins, source-entry/final-decision projections, and suppression totals.
+Intentional scientific changes require a separately reviewed baseline update.
+The dataset and scientific jobs run on manual dispatch and on version-tag pushes;
+their compact JSON reports are retained as workflow artifacts.

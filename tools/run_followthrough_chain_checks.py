@@ -11,10 +11,16 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from followthrough_acceptance import (
+    assert_candidate_manifest,
+    assert_expected,
+    assert_imported_evidence,
+    load_baseline,
+    validate_baseline_inputs,
+)
+
 from enrich_bakta_lib.core.merge_engine import (
     MergeError,
-    load_translation_evidence,
-    parse_genbank_bytes,
 )
 from enrich_bakta_lib.sources.eggnog import merge as merge_eggnog
 from enrich_bakta_lib.workflows.enrich import enrich
@@ -52,13 +58,23 @@ def _check(
     print(json.dumps(row), flush=True)
 
 
-def run(root: Path, output: Path) -> int:
+def run(root: Path, output: Path, baseline_path: Path) -> int:
     output.mkdir(parents=True, exist_ok=True)
     report = output / "chain-checks.json"
     results: list[dict[str, Any]] = []
-    expected_origins = {"C14": 4, "SM": 6}
+    baseline = load_baseline(baseline_path)
+    _check(
+        "baseline-inputs",
+        lambda: validate_baseline_inputs(root, baseline),
+        results=results,
+        report=report,
+        tracebacks=output,
+    )
+    if results[-1]["status"] != "passed":
+        return 1
 
     for sample in ("C14", "SM"):
+        expected = baseline["samples"][sample]["expected"]
         folder = root / "data" / sample
         faa = folder / "bakta" / f"{sample}-NMZ.faa"
         egg = folder / "evidence" / f"{sample}-NMZ-query.emapper.annotations"
@@ -87,16 +103,14 @@ def run(root: Path, output: Path) -> int:
             )
             if stats["insertions"] != 0 or rerun.read_bytes() != restored.read_bytes():
                 raise AssertionError("restoration output-as-input rerun changed bytes")
-            ledger = load_translation_evidence(
-                ledger_path, parse_genbank_bytes(rerun.read_bytes())
+            evidence = assert_imported_evidence(
+                ledger_path, rerun, expected["imported_query_ids"]
             )
-            if len(ledger) != expected_origins[sample] or any(
-                value.origin != "imported_faa" for value in ledger.values()
-            ):
-                raise AssertionError(
-                    "restoration rerun did not retain imported origins"
-                )
-            return {"insertions": 0, "ledger_entries": len(ledger)}
+            return {
+                "insertions": 0,
+                "ledger_entries": len(evidence["query_ids"]),
+                **evidence,
+            }
 
         _check(
             f"{sample}-restoration-noop",
@@ -131,10 +145,15 @@ def run(root: Path, output: Path) -> int:
                 or rerun.read_bytes() != egg_output.read_bytes()
             ):
                 raise AssertionError("eggNOG output-as-input rerun changed bytes")
-            ledger = load_translation_evidence(
-                ledger_path, parse_genbank_bytes(rerun.read_bytes())
+            evidence = assert_imported_evidence(
+                ledger_path, rerun, expected["imported_query_ids"]
             )
-            return {"insertions": 0, "ledger_entries": len(ledger)}
+            return {
+                "insertions": 0,
+                "ledger_entries": len(evidence["query_ids"]),
+                "manifest_semantics": assert_candidate_manifest(ledger_path),
+                **evidence,
+            }
 
         _check(
             f"{sample}-egg-noop",
@@ -170,11 +189,9 @@ def run(root: Path, output: Path) -> int:
                 allow_imported_translations=True,
                 baktfold_invalid_ec_policy="skip",
             )
-            ledger = load_translation_evidence(
-                unified_manifest, parse_genbank_bytes(unified.read_bytes())
+            evidence = assert_imported_evidence(
+                unified_manifest, unified, expected["imported_query_ids"]
             )
-            if len(ledger) != expected_origins[sample]:
-                raise AssertionError("unified workflow dropped imported origins")
             try:
                 enrich(
                     bakta_path=unified,
@@ -188,11 +205,19 @@ def run(root: Path, output: Path) -> int:
                     raise
             else:
                 raise AssertionError("unified imported-protein opt-in was not enforced")
-            return {
+            result = {
                 "output_sha256": stats["output_sha256"],
                 "insertions": stats["insertions"],
-                "ledger_entries": len(ledger),
+                "ledger_entries": len(evidence["query_ids"]),
             }
+            assert_expected(
+                f"{sample} unified",
+                {key: result[key] for key in ("output_sha256", "insertions")},
+                expected["unified"],
+            )
+            result["manifest_semantics"] = assert_candidate_manifest(unified_manifest)
+            result["translation_evidence"] = evidence
+            return result
 
         _check(
             f"{sample}-unified",
@@ -228,10 +253,20 @@ def run(root: Path, output: Path) -> int:
             )
             if stats["insertions"] != 0 or rerun.read_bytes() != unified.read_bytes():
                 raise AssertionError("unified output-as-input rerun changed bytes")
-            ledger = load_translation_evidence(
-                ledger_path, parse_genbank_bytes(rerun.read_bytes())
+            assert_expected(
+                f"{sample} unified rerun hash",
+                stats["output_sha256"],
+                expected["unified"]["output_sha256"],
             )
-            return {"insertions": 0, "ledger_entries": len(ledger)}
+            evidence = assert_imported_evidence(
+                ledger_path, rerun, expected["imported_query_ids"]
+            )
+            return {
+                "insertions": 0,
+                "ledger_entries": len(evidence["query_ids"]),
+                "manifest_semantics": assert_candidate_manifest(ledger_path),
+                **evidence,
+            }
 
         _check(
             f"{sample}-unified-noop",
@@ -249,8 +284,13 @@ def main() -> int:
     parser.add_argument(
         "--output", type=Path, default=Path(".test-output/followthrough")
     )
+    parser.add_argument(
+        "--baseline",
+        type=Path,
+        default=Path("docs/data/followthrough-scientific-baseline.json"),
+    )
     args = parser.parse_args()
-    return run(args.root.resolve(), args.output.resolve())
+    return run(args.root.resolve(), args.output.resolve(), args.baseline.resolve())
 
 
 if __name__ == "__main__":

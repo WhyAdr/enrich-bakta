@@ -116,7 +116,7 @@ jobs:
           )
 
   dataset-bytes:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -129,7 +129,7 @@ jobs:
       - run: python tools/validate_dataset_manifest.py docs/data/PUBLISHED-MANIFEST.json
 
   scientific-reruns:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     needs: dataset-bytes
     runs-on: ubuntu-latest
     steps:
@@ -148,4 +148,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: followthrough-scientific-results
-          path: .test-output/followthrough/*.json
+          path: |
+            .test-output/followthrough/real-checks.json
+            .test-output/followthrough/chain-checks.json
+            .test-output/followthrough/*.traceback.txt
+          if-no-files-found: ignore

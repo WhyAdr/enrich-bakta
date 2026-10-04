@@ -11,10 +11,14 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from enrich_bakta_lib.core.merge_engine import (
-    load_translation_evidence,
-    parse_genbank_bytes,
+from followthrough_acceptance import (
+    assert_candidate_manifest,
+    assert_expected,
+    assert_imported_evidence,
+    load_baseline,
+    validate_baseline_inputs,
 )
+
 from enrich_bakta_lib.sources.eggnog import merge as merge_eggnog
 from enrich_bakta_lib.sources.eggnog import parse_eggnog_path
 from enrich_bakta_lib.sources.kofam import merge as merge_kofam
@@ -52,7 +56,7 @@ def _check(
     print(json.dumps(row), flush=True)
 
 
-def run(root: Path, output: Path) -> int:
+def run(root: Path, output: Path, baseline_path: Path) -> int:
     output.mkdir(parents=True, exist_ok=True)
     report = output / "real-checks.json"
     results: list[dict[str, Any]] = []
@@ -72,8 +76,20 @@ def run(root: Path, output: Path) -> int:
         "eggnog_ogs",
         "confidence",
     )
+    baseline = load_baseline(baseline_path)
+    _check(
+        "baseline-inputs",
+        lambda: validate_baseline_inputs(root, baseline),
+        results=results,
+        report=report,
+        tracebacks=output,
+    )
+    if results[-1]["status"] != "passed":
+        return 1
 
     for sample in ("C14", "SM"):
+        sample_baseline = baseline["samples"][sample]
+        expected = sample_baseline["expected"]
         folder = root / "data" / sample
         prefix = f"{sample}-NMZ"
         base = folder / "bakta" / f"{prefix}.gbff"
@@ -96,11 +112,17 @@ def run(root: Path, output: Path) -> int:
             }
             if left != right:
                 raise AssertionError("normalized TSV and XLSX hit fields differ")
-            return {
+            result = {
                 "rows": len(left),
                 "schema": tsv.schema_id,
                 "tsv_xlsx_equal": True,
             }
+            assert_expected(
+                f"{sample} normalized table",
+                {key: result[key] for key in ("rows", "schema")},
+                expected["table"],
+            )
+            return result
 
         _check(
             f"{sample}-tables",
@@ -128,11 +150,18 @@ def run(root: Path, output: Path) -> int:
                 manifest_path=output / f"{sample}-bk.json",
                 baktfold_invalid_ec_policy="skip",
             )
-            return {
+            result = {
                 "output_sha256": stats["output_sha256"],
                 "insertions": stats["insertions"],
                 "hits": stats["kofam"]["hits"],
             }
+            assert_expected(
+                f"{sample} Baktfold/Kofam", result, expected["baktfold_kofam"]
+            )
+            result["manifest_semantics"] = assert_candidate_manifest(
+                output / f"{sample}-bk.json"
+            )
+            return result
 
         _check(
             f"{sample}-bk",
@@ -163,7 +192,18 @@ def run(root: Path, output: Path) -> int:
                 raise AssertionError(
                     "Baktfold/Kofam output-as-input rerun changed bytes"
                 )
-            return {"output_sha256": stats["output_sha256"], "insertions": 0}
+            assert_expected(
+                f"{sample} Baktfold/Kofam rerun hash",
+                stats["output_sha256"],
+                expected["baktfold_kofam"]["output_sha256"],
+            )
+            return {
+                "output_sha256": stats["output_sha256"],
+                "insertions": 0,
+                "manifest_semantics": assert_candidate_manifest(
+                    output / f"{sample}-bk-rerun.json"
+                ),
+            }
 
         _check(
             f"{sample}-bk-rerun",
@@ -190,10 +230,22 @@ def run(root: Path, output: Path) -> int:
                 manifest_path=restoration_manifest,
                 translation_policy="import-faa",
             )
-            return {
+            result = {
                 "count": stats["restored_translation_count"],
                 "output_sha256": stats["output_sha256"],
             }
+            assert_expected(
+                f"{sample} restoration",
+                {
+                    "restored_translation_count": result["count"],
+                    "output_sha256": result["output_sha256"],
+                },
+                expected["restoration"],
+            )
+            result["translation_evidence"] = assert_imported_evidence(
+                restoration_manifest, restored, expected["imported_query_ids"]
+            )
+            return result
 
         _check(
             f"{sample}-restore",
@@ -222,11 +274,17 @@ def run(root: Path, output: Path) -> int:
                 translation_evidence_manifest=restoration_manifest,
                 allow_imported_translations=True,
             )
-            return {
+            result = {
                 "output_sha256": stats["output_sha256"],
                 "insertions": stats["insertions"],
                 "emitted_values": stats["eggnog"]["emitted_values"],
             }
+            assert_expected(f"{sample} eggNOG", result, expected["eggnog"])
+            result["manifest_semantics"] = assert_candidate_manifest(egg_manifest)
+            result["translation_evidence"] = assert_imported_evidence(
+                egg_manifest, enriched, expected["imported_query_ids"]
+            )
+            return result
 
         _check(
             f"{sample}-egg",
@@ -237,12 +295,14 @@ def run(root: Path, output: Path) -> int:
         )
 
         def chain_check(
-            enriched: Path = enriched, egg_manifest: Path = egg_manifest
+            enriched: Path = enriched,
+            egg_manifest: Path = egg_manifest,
+            expected: dict[str, Any] = expected,
         ) -> dict[str, Any]:
-            ledger = load_translation_evidence(
-                egg_manifest, parse_genbank_bytes(enriched.read_bytes())
+            evidence = assert_imported_evidence(
+                egg_manifest, enriched, expected["imported_query_ids"]
             )
-            return {"entries": len(ledger)}
+            return {"entries": len(evidence["query_ids"]), **evidence}
 
         _check(
             f"{sample}-egg-chain",
@@ -260,8 +320,13 @@ def main() -> int:
     parser.add_argument(
         "--output", type=Path, default=Path(".test-output/followthrough")
     )
+    parser.add_argument(
+        "--baseline",
+        type=Path,
+        default=Path("docs/data/followthrough-scientific-baseline.json"),
+    )
     args = parser.parse_args()
-    return run(args.root.resolve(), args.output.resolve())
+    return run(args.root.resolve(), args.output.resolve(), args.baseline.resolve())
 
 
 if __name__ == "__main__":
