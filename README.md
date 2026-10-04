@@ -1,11 +1,11 @@
 # enrich-bakta
 
-Version `0.3.1` is distributed under the GNU GPL v3 or later. Curated owner-
+Version `0.4.0` is distributed under the GNU GPL v3 or later. Curated owner-
 authorized biological artifacts are published separately under CC BY 4.0; see
 [`docs/data/PUBLISHING.md`](docs/data/PUBLISHING.md).
 
 `enrich-bakta` adds annotation-supported evidence from Baktfold,
-KofamScan/KOALA, and eggNOG-mapper to Bakta GenBank files without reconstructing or normalizing
+KofamScan/KOALA, eggNOG-mapper, and InterProScan to Bakta GenBank files without reconstructing or normalizing
 the Bakta source.
 
 The original Bakta `.gbff` is always authoritative. The merge engine computes
@@ -26,10 +26,11 @@ cross-file transaction.
 | `src/enrich_bakta_lib/sources/baktfold.py` | Strict Baktfold parity and conservative gene/EC/structural additions. |
 | `src/enrich_bakta_lib/sources/kofam.py` | FAA-validated Kofam hit parsing, KO evidence, and optional one-pass Baktfold merge. |
 | `src/enrich_bakta_lib/sources/eggnog.py` | Schema-selected eggNOG TSV/XLSX parsing, value rules, context reporting, and evidence transfer. |
+| `src/enrich_bakta_lib/sources/interproscan.py` | Streaming TSV parser, layout profile validation, member database note promotion, and InterPro evidence transfer. |
 | `src/enrich_bakta_lib/workflows/enrich.py` | Canonical one-pass multi-source workflow. |
 | `src/enrich_bakta_lib/workflows/restore_translations.py` | Policy-controlled translation restoration with a downstream evidence ledger. |
 | `legacy/normalize_baktfold.py` | Historical normalization utility retained outside the supported package and byte-preserving path. |
-| Root `*.py` names | Compatibility launchers for migrated modules; new code should import the canonical package. |
+| `Root *.py` names | Compatibility launchers for migrated modules; new code should import the canonical package. |
 | `tests/` | Synthetic parity, preservation, qualifier, KO, failure, CRLF, and idempotence tests. |
 
 Python 3.10 or later and Biopython 1.83 or later are required. Install the
@@ -218,6 +219,47 @@ identity, policy, and protein hash in the restoration manifest. This is an expli
 annotation-repair policy: retain both the original and restored GBFFs, and do
 not describe the restored sequence as newly demonstrated biology.
 
+## InterProScan merge
+
+```bash
+python merge_interproscan_bakta.py \
+  BAKTA.gbff BAKTA.faa query.interproscan.tsv OUTPUT.gbff \
+  --interproscan-version 5.59-91.0 \
+  --interproscan-tsv-layout ipr-go-pathways \
+  --manifest OUTPUT.manifest.json \
+  --context-report OUTPUT.context.json
+```
+
+The InterProScan table must contain valid TSV records matching the verified
+producer profile (`5.59-91.0`). Single-pass streaming parses each row enforcing
+a 1 MiB line ceiling, captures the input SHA-256, tracks AntiFam quality control
+hits, and validates layout profiles:
+- `ipr-go-pathways` (default, 15 columns, with GO and Reactome/MetaCyc pathways)
+- `ipr-go` (14 columns, with GO annotations)
+- `ipr-pathways` (14 columns, with pathway annotations)
+- `ipr-only` (11-13 columns, core InterPro accessions without GO or pathways)
+
+Every query with promoted evidence must occur in the Bakta FAA and as one Bakta
+CDS `locus_tag`, with the normalized FAA sequence matching the CDS `/translation`
+and query MD5 digest. Queries missing from the FAA or translationless CDS features
+are rejected unless carried through a verified translation restoration manifest.
+
+Promoted evidence includes:
+1. Member database signatures (`--interproscan-member-dbs Pfam,TIGRFAM` by default)
+   promoted as `/note="Pfam:PF02566"` or `/note="TIGRFAM:TIGR00001"`. Existing
+   versioned or unversioned qualifiers are detected and de-duplicated.
+2. Integrated InterPro family and domain accessions promoted as `/db_xref="InterPro:IPRxxxxxx"`.
+3. Gene Ontology terms promoted as `/db_xref="GO:xxxxxxx"`.
+
+Feature provenance records the member database or InterPro entry as
+`DESCRIPTION:similar to AA sequence:InterPro:MEMBER_DB:ACCESSION`.
+
+When `--context-report PATH` is supplied, biological pathways (Reactome, MetaCyc,
+KEGG), signature matches, and AntiFam quality control hits are preserved in a
+deterministic sidecar (`enrich-bakta.interproscan-context.v1`). In unified runs,
+this sidecar is aggregated under envelope `enrich-bakta.context.v1` and its
+SHA-256 is recorded directly in the merge manifest metadata.
+
 ## Unified multi-source enrichment
 
 ```bash
@@ -225,17 +267,21 @@ python enrich_bakta.py \
   --bakta BAKTA.gbff --faa BAKTA.faa --baktfold BAKTFOLD.gbff \
   --kofamscan KofamKOALA.txt --kofamscan-version 1.3.0 \
   --eggnog query.emapper.annotations --eggnog-version 3.0.0-beta6 \
+  --interproscan query.interproscan.tsv --interproscan-version 5.59-91.0 \
   --output ENRICHED.gbff --manifest ENRICHED.manifest.json \
   --context-report ENRICHED.context.json
 ```
 
-At least one evidence source is required, and FAA is mandatory with KofamScan or
-eggNOG. Exact qualifier/value overlaps are emitted once with source support in
+At least one evidence source is required, and FAA is mandatory with KofamScan,
+eggNOG, or InterProScan. Exact qualifier/value overlaps (such as GO terms shared
+between eggNOG and InterProScan) are emitted once with multi-source support in
 the reconciliation manifest. Different EC/KO values coexist. Different
 Baktfold/eggNOG gene symbols at a blank locus are skipped by default; select
 `--gene-conflict-policy prefer-eggnog` or `prefer-baktfold` to choose explicitly.
 The unified CLI also accepts `--clean-gene-suffix`, with the same raw-value
 preservation policy as the eggNOG-only CLI.
+InterProScan options (`--interproscan-version`, `--interproscan-tsv-layout`, and
+`--interproscan-member-dbs`) match the standalone CLI.
 Use `--baktfold-invalid-ec-policy skip` only for historical Baktfold inputs
 with documented provisional EC tokens; the default remains fail-closed.
 The original single-source commands remain available.

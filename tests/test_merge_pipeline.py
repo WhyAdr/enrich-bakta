@@ -841,7 +841,7 @@ def test_unified_merge_reconciles_eggnog_and_kofam(tmp_path: Path) -> None:
     assert metadata["baktfold_version"] == "0.1.0"
     assert metadata["kofam_sha256"]
     assert metadata["eggnog_sha256"]
-    assert metadata["tool_version"] == "0.3.1"
+    assert metadata["tool_version"] == "0.4.0"
     assert metadata["clean_gene_suffix"] is True
     assert metadata["baktfold_version_detected"] is True
     entries = payload["entries"]

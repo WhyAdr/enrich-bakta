@@ -3,7 +3,7 @@
   "accepted_on": "2026-10-04",
   "tool": {
     "name": "enrich-bakta",
-    "version": "0.3.1"
+    "version": "0.4.0"
   },
   "policies": {
     "allow_imported_translations": true,
