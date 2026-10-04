@@ -738,6 +738,16 @@ def has_translation_evidence_marker(data: bytes) -> bool:
     return TRANSLATION_EVIDENCE_MARKER.encode("ascii") in data
 
 
+LEGACY_RESTORATION_COMMENT_RE = re.compile(
+    rb"normalize_baktfold\.py.*restore Bakta\s+provenance", re.DOTALL
+)
+
+
+def has_legacy_restoration_comment(data: bytes) -> bool:
+    """Detect known legacy normalize_baktfold.py restoration comment."""
+    return bool(LEGACY_RESTORATION_COMMENT_RE.search(data[:100_000]))
+
+
 def load_translation_evidence(
     path: Path, base: RawDocument
 ) -> dict[str, TranslationEvidence]:
