@@ -29,13 +29,35 @@
         },
         "candidate_role_counts": {"$ref": "#/$defs/roleCounts"},
         "insertion_role_counts": {"$ref": "#/$defs/roleCounts"},
-        "context_report_sha256": {"$ref": "#/$defs/sha256"}
+        "context_report_sha256": {"$ref": "#/$defs/sha256"},
+        "interproscan_version": {"type": "string", "minLength": 1},
+        "interproscan_tsv_layout": {
+          "enum": ["ipr-go-pathways", "ipr-go", "ipr-pathways", "ipr-only"]
+        },
+        "interproscan_sha256": {"$ref": "#/$defs/sha256"},
+        "member_dbs": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
       },
       "additionalProperties": true
     },
     "entries": {
       "type": "array",
-      "items": {"type": "object"}
+      "items": {
+        "type": "object",
+        "allOf": [
+          {
+            "if": {
+              "properties": {"entry_type": {"const": "interproscan_candidate"}},
+              "required": ["entry_type"]
+            },
+            "then": {
+              "$ref": "#/$defs/interproscanCandidate"
+            }
+          }
+        ]
+      }
     },
     "decisions": {
       "type": "array",
@@ -155,6 +177,86 @@
         },
         "confidence_diagnostics": {"type": "object"},
         "reason": {"type": "string"}
+      }
+    },
+    "interproscanCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry_type",
+        "query_id",
+        "record",
+        "feature_type",
+        "locus_tag",
+        "target_feature_uids",
+        "field",
+        "qualifier",
+        "raw_value",
+        "normalized_value",
+        "status",
+        "planned_status",
+        "final_status",
+        "candidate_role",
+        "evidence_class",
+        "reason_code",
+        "planned_reason_code",
+        "emitted_qualifiers",
+        "row_number",
+        "source",
+        "reason"
+      ],
+      "properties": {
+        "entry_type": {"const": "interproscan_candidate"},
+        "query_id": {"type": "string", "minLength": 1},
+        "record": {"type": "string", "minLength": 1},
+        "feature_type": {"const": "CDS"},
+        "locus_tag": {"type": "string", "minLength": 1},
+        "target_feature_uids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^feature:[0-9a-f]{32}$"
+          }
+        },
+        "field": {"type": "string", "minLength": 1},
+        "qualifier": {"type": "string", "minLength": 1},
+        "raw_value": {"type": "string"},
+        "normalized_value": {"type": "string"},
+        "status": {"$ref": "#/$defs/finalStatus"},
+        "planned_status": {"type": "string", "minLength": 1},
+        "final_status": {"$ref": "#/$defs/finalStatus"},
+        "candidate_role": {"$ref": "#/$defs/role"},
+        "evidence_class": {"type": "string", "minLength": 1},
+        "reason_code": {"type": "string", "minLength": 1},
+        "planned_reason_code": {"type": "string", "minLength": 1},
+        "emitted_qualifiers": {"type": "string"},
+        "planned_emitted_qualifiers": {"type": "string"},
+        "support_witness": {"type": ["string", "null"]},
+        "row_number": {"type": "integer", "minimum": 0},
+        "source": {"const": "InterProScan"},
+        "reason": {"type": "string"},
+        "candidate_id": {
+          "type": "string",
+          "pattern": "^candidate:[0-9a-f]{32}$"
+        },
+        "insertion_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^insertion:[0-9a-f]{32}$"
+          }
+        },
+        "supporting_candidate_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^candidate:[0-9a-f]{32}$"
+          }
+        }
       }
     }
   }

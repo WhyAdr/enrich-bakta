@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WhyAdr/enrich-bakta/schemas/context.v1.schema.json",
+  "title": "enrich-bakta combined context report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "metadata"],
+  "properties": {
+    "schema": {
+      "const": "enrich-bakta.context.v1"
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["operation", "sources"],
+      "properties": {
+        "operation": {"type": "string"},
+        "sources": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "eggnog": {"type": "object"},
+    "interproscan": {"type": "object"}
+  }
+}

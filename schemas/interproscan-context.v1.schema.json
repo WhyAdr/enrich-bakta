@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WhyAdr/enrich-bakta/schemas/interproscan-context.v1.schema.json",
+  "title": "enrich-bakta InterProScan context report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "metadata", "entries"],
+  "properties": {
+    "schema": {
+      "const": "enrich-bakta.interproscan-context.v1"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "operation",
+        "interproscan_version",
+        "interproscan_tsv_layout",
+        "interproscan_sha256",
+        "faa_sha256",
+        "member_dbs",
+        "rows",
+        "unintegrated_rows",
+        "integrated_rows",
+        "queries",
+        "matched_queries",
+        "identity_diagnostics",
+        "pathway_counters",
+        "pathway_digest",
+        "support_digest",
+        "qc_flags"
+      ],
+      "properties": {
+        "operation": {"type": "string"},
+        "interproscan_version": {"type": "string"},
+        "interproscan_tsv_layout": {
+          "enum": ["ipr-go-pathways", "ipr-go", "ipr-pathways", "ipr-only"]
+        },
+        "interproscan_sha256": {"$ref": "#/$defs/sha256"},
+        "faa_sha256": {"$ref": "#/$defs/sha256"},
+        "member_dbs": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "rows": {"type": "integer", "minimum": 0},
+        "unintegrated_rows": {"type": "integer", "minimum": 0},
+        "integrated_rows": {"type": "integer", "minimum": 0},
+        "queries": {"type": "integer", "minimum": 0},
+        "matched_queries": {"type": "integer", "minimum": 0},
+        "tool_version": {"type": "string"},
+        "base_sha256": {"$ref": "#/$defs/sha256"},
+        "output_sha256": {"$ref": "#/$defs/sha256"},
+        "insertions": {"type": "integer", "minimum": 0},
+        "records": {"type": "integer", "minimum": 1},
+        "identity_diagnostics": {
+          "type": "object",
+          "required": [
+            "faa_records",
+            "gbff_records",
+            "gbff_cds",
+            "matched_queries"
+          ],
+          "properties": {
+            "faa_records": {"type": "integer", "minimum": 0},
+            "gbff_records": {"type": "integer", "minimum": 0},
+            "gbff_cds": {"type": "integer", "minimum": 0},
+            "matched_queries": {"type": "integer", "minimum": 0}
+          }
+        },
+        "pathway_counters": {
+          "type": "object",
+          "required": ["total_occurrences", "by_database"],
+          "properties": {
+            "total_occurrences": {"type": "integer", "minimum": 0},
+            "by_database": {
+              "type": "object",
+              "additionalProperties": {"type": "integer", "minimum": 0}
+            }
+          }
+        },
+        "pathway_digest": {"$ref": "#/$defs/sha256"},
+        "support_digest": {"$ref": "#/$defs/sha256"},
+        "qc_flags": {
+          "type": "object",
+          "properties": {
+            "anti_fam": {"type": "array"}
+          }
+        }
+      }
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["query_id", "context_signatures", "pathway_occurrences"],
+        "properties": {
+          "query_id": {"type": "string", "minLength": 1},
+          "context_signatures": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {"type": "string"}
+          },
+          "pathway_occurrences": {"type": "integer", "minimum": 0}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

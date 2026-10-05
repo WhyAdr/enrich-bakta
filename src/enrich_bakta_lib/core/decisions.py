@@ -284,13 +284,14 @@ def build_candidate_ledger(
     planned = [item for item in planned_all if item.qualifier != "COMMENT"]
     final = [item for item in final_all if item.qualifier != "COMMENT"]
     index = _feature_index(base)
+    features_by_uid = {feature_uid(f): f for f in base.features}
     final_by_semantic: dict[tuple[str, str, str, str, str], list[str]] = defaultdict(
         list
     )
     for item in final:
         final_by_semantic[_semantic_key(item)].append(insertion_uid(item))
     cds_index = cds_by_locus(base)
-    valid_uids = set(index.values())
+    valid_uids = set(features_by_uid.keys())
     planned_by_value: dict[tuple[str, str, str], list[Insertion]] = defaultdict(list)
     for item in planned:
         planned_by_value[(_source_id(item.source), item.qualifier, item.value)].append(
@@ -336,33 +337,62 @@ def build_candidate_ledger(
         raw_value = str(row.get("raw_value", row.get("ko", "")))
         target_uids: set[str] = set()
         query_id = str(row.get("query_id", ""))
-        if query_id in cds_index:
-            target_uid = feature_uid(cds_index[query_id])
-            target_uids.add(target_uid)
-        target_uids.update(
-            value
-            for value in row.get("target_feature_uids", [])
-            if isinstance(value, str) and value in valid_uids
-        )
-        if not target_uids and row.get("record") is not None:
-            record = str(row.get("record", ""))
-            feature_type = str(row.get("feature_type", ""))
-            locus_tag = str(row.get("locus_tag", ""))
-            target_location = str(row.get("target_location", ""))
-            for feature in base.features:
-                if (
-                    feature.record_id == record
-                    and feature.feature_type == feature_type
-                    and (feature.locus_tag or "") == locus_tag
-                    and (not target_location or feature.location_key == target_location)
-                ):
-                    target_uids.add(feature_uid(feature))
-        if not target_uids:
+        if source_id == "InterProScan":
+            supplied_uids = row.get("target_feature_uids")
+            if not isinstance(supplied_uids, (list, tuple)) or len(supplied_uids) != 1:
+                raise MergeError(
+                    f"InterProScan row requires exactly one target_feature_uids, got {supplied_uids!r}"
+                )
+            t_uid = supplied_uids[0]
+            if not isinstance(t_uid, str) or t_uid not in valid_uids:
+                raise MergeError(
+                    f"InterProScan row target feature UID {t_uid!r} is not a valid feature in base"
+                )
+            target_feat = features_by_uid.get(t_uid)
+            if target_feat is None or target_feat.feature_type != "CDS":
+                raise MergeError(
+                    f"InterProScan row target feature {t_uid!r} is not a CDS"
+                )
+            if query_id and (
+                query_id not in cds_index or feature_uid(cds_index[query_id]) != t_uid
+            ):
+                raise MergeError(
+                    f"InterProScan row target feature {t_uid!r} does not match query {query_id!r}"
+                )
+            target_uids.add(t_uid)
+        else:
+            if query_id in cds_index:
+                target_uid = feature_uid(cds_index[query_id])
+                target_uids.add(target_uid)
             target_uids.update(
-                item_uid
-                for item in planned_by_value.get((source_id, qualifier, normalized), [])
-                if (item_uid := _insertion_feature_uid(item, index)) is not None
+                value
+                for value in row.get("target_feature_uids", [])
+                if isinstance(value, str) and value in valid_uids
             )
+            if not target_uids and row.get("record") is not None:
+                record = str(row.get("record", ""))
+                feature_type = str(row.get("feature_type", ""))
+                locus_tag = str(row.get("locus_tag", ""))
+                target_location = str(row.get("target_location", ""))
+                for feature in base.features:
+                    if (
+                        feature.record_id == record
+                        and feature.feature_type == feature_type
+                        and (feature.locus_tag or "") == locus_tag
+                        and (
+                            not target_location
+                            or feature.location_key == target_location
+                        )
+                    ):
+                        target_uids.add(feature_uid(feature))
+            if not target_uids:
+                target_uids.update(
+                    item_uid
+                    for item in planned_by_value.get(
+                        (source_id, qualifier, normalized), []
+                    )
+                    if (item_uid := _insertion_feature_uid(item, index)) is not None
+                )
         matches = (
             []
             if entry_type in {"baktfold_invalid", "eggnog_pair_conflict"}
@@ -750,6 +780,17 @@ def validate_candidate_ledger(
             raise MergeError(
                 f"candidate {candidate_id!r} has invalid target feature UIDs"
             )
+        if row.get("source_id") == "InterProScan":
+            if len(targets) != 1:
+                raise MergeError(
+                    f"InterProScan candidate {candidate_id!r} requires exactly one target UID, got {targets!r}"
+                )
+            if feature_by_uid:
+                target_feature = feature_by_uid.get(targets[0])
+                if target_feature is None or target_feature.feature_type != "CDS":
+                    raise MergeError(
+                        f"InterProScan candidate {candidate_id!r} target must be a CDS feature"
+                    )
         if valid_feature_uids is not None and not set(targets).issubset(
             valid_feature_uids
         ):

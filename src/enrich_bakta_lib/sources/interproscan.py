@@ -875,6 +875,7 @@ def plan_interproscan(
                         "reason_code": "inserted",
                         "planned_reason_code": "inserted",
                         "emitted_qualifiers": f'/inference="{inference_value}"',
+                        "support_witness": None,
                         "row_number": 0,
                         "source": "InterProScan",
                         "reason": "InterProScan feature provenance inference",

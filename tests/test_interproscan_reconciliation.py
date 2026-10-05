@@ -5,11 +5,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from enrich_bakta_lib.core.decisions import (
     build_candidate_ledger,
+    validate_candidate_ledger,
 )
 from enrich_bakta_lib.core.merge_engine import (
+    MergeError,
     cds_by_locus,
+    feature_uid,
     insertion_uid,
     parse_genbank_bytes,
     qualifier_insertion,
@@ -320,3 +325,109 @@ def test_context_report_sha256_in_manifest(tmp_path: Path) -> None:
 
     assert "context_report_sha256" in manifest_data["metadata"]
     assert manifest_data["metadata"]["context_report_sha256"] == expected_context_sha
+
+
+def test_exact_cds_uid_invariant_in_candidate_ledger(tmp_path: Path) -> None:
+    """Verify build_candidate_ledger enforces exact single CDS UID invariant for InterProScan."""
+    # Construct base with two CDSs and gene features
+    rec1 = record_bytes("REC1", DUMMY_QUERY)
+    rec2 = record_bytes("REC2", "OTHER_001")
+    base = parse_genbank_bytes(rec1 + rec2, "base")
+    cds = cds_by_locus(base)
+    target_cds = cds[DUMMY_QUERY]
+    other_cds = cds["OTHER_001"]
+    gene_feat = next(f for f in base.features if f.feature_type == "gene")
+
+    valid_uid = feature_uid(target_cds)
+    other_uid = feature_uid(other_cds)
+    gene_uid = feature_uid(gene_feat)
+
+    base_row = {
+        "entry_type": "interproscan_candidate",
+        "source": "InterProScan",
+        "query_id": DUMMY_QUERY,
+        "record": target_cds.record_id,
+        "feature_type": target_cds.feature_type,
+        "locus_tag": target_cds.locus_tag,
+        "field": "InterPro",
+        "qualifier": "db_xref",
+        "raw_value": "IPR003718",
+        "normalized_value": "InterPro:IPR003718",
+        "status": "supported_existing",
+        "planned_status": "supported_existing",
+        "final_status": "supported_existing",
+        "candidate_role": "functional_proposal",
+        "evidence_class": "InterPro",
+        "reason_code": "value_already_present",
+        "planned_reason_code": "value_already_present",
+        "emitted_qualifiers": "",
+        "row_number": 1,
+    }
+
+    # 1. Missing / empty target_feature_uids
+    row_empty = dict(base_row, target_feature_uids=[])
+    with pytest.raises(MergeError, match=r"requires exactly one target_feature_uids"):
+        build_candidate_ledger(
+            base, [], [], [row_empty], source_hashes={"InterProScan": "a" * 64}
+        )
+
+    # 2. Multiple target_feature_uids
+    row_multiple = dict(base_row, target_feature_uids=[valid_uid, other_uid])
+    with pytest.raises(MergeError, match=r"requires exactly one target_feature_uids"):
+        build_candidate_ledger(
+            base, [], [], [row_multiple], source_hashes={"InterProScan": "a" * 64}
+        )
+
+    # 3. Non-CDS target feature UID
+    row_gene = dict(base_row, target_feature_uids=[gene_uid])
+    with pytest.raises(MergeError, match=r"is not a CDS"):
+        build_candidate_ledger(
+            base, [], [], [row_gene], source_hashes={"InterProScan": "a" * 64}
+        )
+
+    # 4. Target feature UID from different query
+    row_wrong = dict(base_row, target_feature_uids=[other_uid])
+    with pytest.raises(MergeError, match=r"does not match query"):
+        build_candidate_ledger(
+            base, [], [], [row_wrong], source_hashes={"InterProScan": "a" * 64}
+        )
+
+
+def test_validate_candidate_ledger_interproscan_invariants(tmp_path: Path) -> None:
+    """Verify validate_candidate_ledger runtime validator enforces exact single CDS target for InterProScan."""
+    base_data = record_bytes("REC1", DUMMY_QUERY, db_xrefs=("InterPro:IPR003718",))
+    base = parse_genbank_bytes(base_data, "base")
+    cds = cds_by_locus(base)[DUMMY_QUERY]
+    valid_uid = feature_uid(cds)
+
+    valid_decision = {
+        "entry_type": "candidate_decision",
+        "candidate_id": "candidate:00000000000000000000000000000001",
+        "source_id": "InterProScan",
+        "source_sha256": "a" * 64,
+        "target_feature_uids": [valid_uid],
+        "field": "InterPro",
+        "qualifier": "db_xref",
+        "raw_value": "IPR003718",
+        "normalized_value": "InterPro:IPR003718",
+        "planned_status": "supported_existing",
+        "candidate_role": "functional_proposal",
+        "evidence_class": "InterPro",
+        "reason_code": "value_already_present",
+        "final_status": "supported_existing",
+        "insertion_ids": [],
+        "supporting_candidate_ids": [],
+        "confidence_diagnostics": {},
+        "reason": "already present",
+    }
+
+    # Should validate cleanly
+    validate_candidate_ledger([valid_decision], [], base=base)
+
+    # Multiple targets rejected
+    invalid_multi = dict(
+        valid_decision,
+        target_feature_uids=[valid_uid, "feature:00000000000000000000000000000002"],
+    )
+    with pytest.raises(MergeError, match=r"requires exactly one target UID"):
+        validate_candidate_ledger([invalid_multi], [], base=base)
