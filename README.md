@@ -1,6 +1,6 @@
 # enrich-bakta
 
-Version `0.4.0` is distributed under the GNU GPL v3 or later. Curated owner-
+Version `0.4.1` is distributed under the GNU GPL v3 or later. Curated owner-
 authorized biological artifacts are published separately under CC BY 4.0; see
 [`docs/data/PUBLISHING.md`](docs/data/PUBLISHING.md).
 
@@ -222,8 +222,17 @@ not describe the restored sequence as newly demonstrated biology.
 ## InterProScan merge
 
 ```bash
+# Positional arguments syntax
 python merge_interproscan_bakta.py \
   BAKTA.gbff BAKTA.faa query.interproscan.tsv OUTPUT.gbff \
+  --interproscan-version 5.59-91.0 \
+  --interproscan-tsv-layout ipr-go-pathways \
+  --manifest OUTPUT.manifest.json \
+  --context-report OUTPUT.context.json
+
+# Named flags syntax
+python merge_interproscan_bakta.py \
+  --bakta BAKTA.gbff --faa BAKTA.faa --interproscan query.interproscan.tsv --output OUTPUT.gbff \
   --interproscan-version 5.59-91.0 \
   --interproscan-tsv-layout ipr-go-pathways \
   --manifest OUTPUT.manifest.json \
@@ -237,28 +246,31 @@ hits, and validates layout profiles:
 - `ipr-go-pathways` (default, 15 columns, with GO and Reactome/MetaCyc pathways)
 - `ipr-go` (14 columns, with GO annotations)
 - `ipr-pathways` (14 columns, with pathway annotations)
-- `ipr-only` (11-13 columns, core InterPro accessions without GO or pathways)
+- `ipr-only` (13 columns, core InterPro accessions without GO or pathways; 11-column native lookup-disabled layout is unsupported in this version)
 
 Every query with promoted evidence must occur in the Bakta FAA and as one Bakta
 CDS `locus_tag`, with the normalized FAA sequence matching the CDS `/translation`
 and query MD5 digest. Queries missing from the FAA or translationless CDS features
-are rejected unless carried through a verified translation restoration manifest.
+are rejected unless carried through a verified translation restoration manifest
+that explicitly establishes eligible encoded proteins; a lineage manifest does
+not waive missing FAA entries or absent translations.
 
 Promoted evidence includes:
 1. Member database signatures (`--interproscan-member-dbs Pfam,TIGRFAM` by default)
-   promoted as `/note="Pfam:PF02566"` or `/note="TIGRFAM:TIGR00001"`. Existing
+   promoted as `/note="PFAM:PF02566"` or `/note="TIGRFAM:TIGR00001"`. Existing
    versioned or unversioned qualifiers are detected and de-duplicated.
 2. Integrated InterPro family and domain accessions promoted as `/db_xref="InterPro:IPRxxxxxx"`.
 3. Gene Ontology terms promoted as `/db_xref="GO:xxxxxxx"`.
 
-Feature provenance records the member database or InterPro entry as
-`DESCRIPTION:similar to AA sequence:InterPro:MEMBER_DB:ACCESSION`.
+Feature provenance records `/inference="protein motif:InterProScan:VERSION"` on each
+CDS that receives new qualifiers.
 
 When `--context-report PATH` is supplied, biological pathways (Reactome, MetaCyc,
 KEGG), signature matches, and AntiFam quality control hits are preserved in a
-deterministic sidecar (`enrich-bakta.interproscan-context.v1`). In unified runs,
-this sidecar is aggregated under envelope `enrich-bakta.context.v1` and its
-SHA-256 is recorded directly in the merge manifest metadata.
+deterministic sidecar (`enrich-bakta.interproscan-context.v1`). In unified runs
+combining both eggNOG and InterProScan context, this sidecar is aggregated under
+envelope `enrich-bakta.context.v1`, and its SHA-256 is recorded directly in the
+merge manifest metadata.
 
 ## Unified multi-source enrichment
 

@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "accepted_on": "2026-10-05",
+  "tool": {
+    "name": "enrich-bakta",
+    "version": "0.4.1"
+  },
+  "policies": {
+    "allow_imported_translations": true,
+    "interproscan_version": "5.59-91.0",
+    "interproscan_tsv_layout": "ipr-go-pathways",
+    "interproscan_member_dbs": ["Pfam", "TIGRFAM"],
+    "add_comment_note": true,
+    "add_feature_provenance": true
+  },
+  "samples": {
+    "C14": {
+      "inputs": {
+        "bakta_gbff": {
+          "path": "data/C14/bakta/C14-NMZ.gbff",
+          "sha256": "8fbb0f56ffd91fa18dacc0c6d67bc9b2e4efede04f476238786d2db9fba6feab"
+        },
+        "bakta_faa": {
+          "path": "data/C14/bakta/C14-NMZ.faa",
+          "sha256": "955a8af2a91fd2411774ee1c1c4a8bb178c1f733d37aa8a5f6ac35b358e2b09f"
+        },
+        "interproscan_tsv": {
+          "path": "data/C14/evidence/interproscan/C14-NMZ.interproscan.tsv",
+          "sha256": "5de249ac97ed468bdae75c5ab483d91f5d2f613e7dbbc2e922ee263ec441ac6b"
+        }
+      },
+      "expected": {
+        "interproscan_only": {
+          "output_sha256": "472b0bd60d3990dda6307c89de7153d2ab3fbfd9f9324180e8889cb1b47bc9e1",
+          "insertions": 34080,
+          "candidate_count": 37942,
+          "emitted_candidate_count": 34079,
+          "accepted_candidate_count": 37942,
+          "context_report_sha256": "b2b13b861e8a47973c3dce46f90998a3bcc6b0b7cde5f716b7c63f32e58dffb9"
+        },
+        "noop": {
+          "output_sha256": "472b0bd60d3990dda6307c89de7153d2ab3fbfd9f9324180e8889cb1b47bc9e1",
+          "insertions": 0
+        },
+        "four_source": {
+          "output_sha256": "fbf4bb5eae6a35b3405469c443ee36570f04254bf128f2b925c9020b7bbadb0e",
+          "insertions": 74910
+        }
+      }
+    },
+    "SM": {
+      "inputs": {
+        "bakta_gbff": {
+          "path": "data/SM/bakta/SM-NMZ.gbff",
+          "sha256": "27b2c31b17a9a4b838c98a10c8165a6cd6e4f91859df72e75364f189478bef2d"
+        },
+        "bakta_faa": {
+          "path": "data/SM/bakta/SM-NMZ.faa",
+          "sha256": "a6de8205c333014263fabe05aff97d99c2355986ee6712cb5563b3332173d317"
+        },
+        "interproscan_tsv": {
+          "path": "data/SM/evidence/interproscan/SM-NMZ.interproscan.tsv",
+          "sha256": "3cb5f0e8b6723faae26f450c4cc288526452cd8e9483e7aa0920029f2d3f29fe"
+        },
+        "restored_gbff": {
+          "path": "data/SM/derived/restored/SM-NMZ-eggnog-restored.gbff",
+          "sha256": "17e76587be6ff2c169426379cf288cdcd3c20d1e3a92d72e9b564a4981648076"
+        },
+        "restored_manifest": {
+          "path": "data/SM/derived/restored/SM-NMZ-eggnog-restored.manifest.json",
+          "sha256": "43e176133a42e40f7246e3983ae15dd58aebbe476a36c0e3b7b08e4c0f07c133"
+        }
+      },
+      "expected": {
+        "restored_interproscan_only": {
+          "output_sha256": "0df5dce4a2aa615e313eaf858d948e8ff8b8698cc11ffc4bca444a2860d4e471",
+          "insertions": 33542,
+          "candidate_count": 37412,
+          "emitted_candidate_count": 33540,
+          "accepted_candidate_count": 37412,
+          "context_report_sha256": "a19bfb43da1e745c5564861432e2f55098934f63b7bad07854f665d9e83c019e",
+          "imported_query_ids": [
+            "NNLMDO_002705",
+            "NNLMDO_007000",
+            "NNLMDO_007005",
+            "NNLMDO_011850",
+            "NNLMDO_013725",
+            "NNLMDO_023610"
+          ]
+        },
+        "four_source": {
+          "output_sha256": "69388307bedc377ce9acdf6ccce838e9af9eca38dff51f13ed9b76263c8d1035",
+          "insertions": 73889
+        },
+        "pristine_missing_translations": [
+          "NNLMDO_002705",
+          "NNLMDO_007000",
+          "NNLMDO_007005",
+          "NNLMDO_013725",
+          "NNLMDO_023610"
+        ]
+      }
+    }
+  }
+}

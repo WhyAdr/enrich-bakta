@@ -28,7 +28,7 @@ def test_interproscan_acceptance_report_if_present():
     if not report_path.is_file():
         return
     report = json.loads(report_path.read_text(encoding="utf-8"))
-    assert len(report) == 4
+    assert len(report) >= 4
     for row in report:
         assert row["status"] == "passed", (
             f"Check {row['label']} failed: {row.get('error')}"

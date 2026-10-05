@@ -22,7 +22,7 @@ from Bio.SeqFeature import CompoundLocation, SimpleLocation
 from Bio.SeqRecord import SeqRecord
 
 QUALIFIER_INDENT = b" " * 21
-TOOL_VERSION = "0.4.0"
+TOOL_VERSION = "0.4.1"
 _FEATURE_RE = re.compile(rb"^ {5}(\S+)\s+(.+)$")
 _QUALIFIER_RE = re.compile(rb"^ {21}/([^=\s]+)(?:=(.*))?$")
 _LOCUS_LENGTH_RE = re.compile(rb"^LOCUS\s+\S+\s+(\d+)\s+bp\b")

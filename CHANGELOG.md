@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.4.1 - 2026-10-05
+
+- Repaired standalone translation restoration JSON serialization (`evidence.as_dict()`).
+- Hardened legacy restoration provenance preflight to inspect comment boundaries across all
+  parsed records without byte cutoffs and establish query-specific eligibility.
+- Bound FAA and parent manifest digests to captured single-snapshot bytes across unified and
+  standalone workflows, rejecting subsequent on-disk input mutation.
+- Finished streaming and scalability optimizations: bounded per-query pathway counters,
+  location samples (<=5), unique-candidate capacity ceilings, and O(1) candidate ledger lookup.
+- Enforced mandatory explicit caller assertion for `--interproscan-version`.
+- Hardened member signature validation to fail before writes on malformed enabled evidence.
+- Enforced exact single CDS target feature UID invariant for InterProScan in candidate ledger,
+  runtime ledger validation, and manifest schema.
+- Typed `interproscan_candidate` entries in merge manifest schema and introduced typed schemas
+  for InterProScan context (`enrich-bakta.interproscan-context.v1`) and unified context (`enrich-bakta.context.v1`).
+- Expanded scientific acceptance suite with C14 no-op idempotence, fresh determinism, SM restored
+  standalone verification, four-source C14/SM runs, and wired checks into CI with artifact upload.
+- Aligned CLI, README, and note/inference formatting (`PFAM:`, `protein motif:InterProScan:VERSION`).
+
 ## 0.4.0 - 2026-10-04
 
 - Added InterProScan annotation enrichment source supporting verified producer
