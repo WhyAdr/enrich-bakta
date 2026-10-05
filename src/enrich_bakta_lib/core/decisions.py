@@ -584,6 +584,7 @@ def build_candidate_ledger(
                     functional_support[
                         ("InterProScan", target_uid, "InterProScan:producer")
                     ].add(candidate.candidate_id)
+    candidate_status_by_id = {c.candidate_id: c.final_status for c in candidates}
     for candidate in candidates:
         if candidate.candidate_role == "producer_provenance":
             supporting = {
@@ -599,10 +600,7 @@ def build_candidate_ledger(
                 emitted_support = {
                     cid
                     for cid in supporting
-                    if any(
-                        c.candidate_id == cid and c.final_status in EMITTED_STATUSES
-                        for c in candidates
-                    )
+                    if candidate_status_by_id.get(cid) in EMITTED_STATUSES
                 }
                 if not emitted_support or not candidate.insertion_ids:
                     if candidate.final_status == "emitted":

@@ -505,3 +505,144 @@ def test_cli_positional_args_and_version(
     )
     assert rc == 0
     assert out_file.is_file()
+
+
+def test_duplicate_row_and_pathway_aggregation_bounds(tmp_path: Path) -> None:
+    """Verify that repeated rows for the same hit are aggregated with bounded state."""
+    row = (
+        f"{DUMMY_QUERY}\t{DUMMY_MD5}\t{DUMMY_LEN}\tPfam\tPF02566\tOsmC-like\t"
+        f"51\t149\t1.9E-14\tT\t25-08-2026\tIPR003718\tOsmC/Ohr family\t"
+        f"GO:0006950\tMetaCyc: PWY-5292|Reactome: R-BTA-1234\n"
+    )
+    dup_tsv = tmp_path / "dup.tsv"
+    dup_tsv.write_text(row * 500, encoding="utf-8")
+
+    sha, hits, diag = stream_interproscan_tsv(dup_tsv, "ipr-go-pathways")
+    assert len(hits) == 1
+    hit = hits[0]
+    assert hit.occurrence_count == 500
+    assert len(hit.location_samples) <= 5
+    assert len(hit.pathways) <= 25
+    assert diag["row_count"] == 500
+    assert diag["pathway_counters"]["total_occurrences"] == 1000
+    assert diag["pathway_occurrences_by_query"][DUMMY_QUERY] == 1000
+
+
+def test_unique_candidate_limit_enforced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify unique candidate aggregation ceiling is strictly enforced."""
+    import enrich_bakta_lib.sources.interproscan as ips_mod
+
+    monkeypatch.setattr(ips_mod, "MAX_AGGREGATED_CANDIDATES", 3)
+
+    rows = [
+        f"{DUMMY_QUERY}\t{DUMMY_MD5}\t{DUMMY_LEN}\tPfam\tPF0000{i}\tDesc\t1\t10\t1.0\tT\t25-08-2026\t-\t-\n"
+        for i in range(1, 6)
+    ]
+    tsv_file = tmp_path / "exceed.tsv"
+    tsv_file.write_text("".join(rows), encoding="utf-8")
+
+    with pytest.raises(
+        MergeError, match=r"exceeded maximum unique candidate aggregation limit"
+    ):
+        stream_interproscan_tsv(tsv_file, "ipr-go-pathways")
+
+
+def test_malformed_pfam_and_tigrfam_rejection(tmp_path: Path) -> None:
+    """Verify malformed Pfam or TIGRFAM accessions fail before writes when member DB is enabled."""
+    base_data = record_bytes("REC1", DUMMY_QUERY)
+    base = parse_genbank_bytes(base_data, "base")
+    faa_file = tmp_path / "sample.faa"
+    faa_file.write_bytes(faa_bytes(DUMMY_QUERY))
+
+    # Pfam with 6 digits (PF000010) instead of 5 digits
+    bad_pfam_tsv = tmp_path / "bad_pfam.tsv"
+    bad_pfam_tsv.write_text(
+        f"{DUMMY_QUERY}\t{DUMMY_MD5}\t{DUMMY_LEN}\tPfam\tPF000010\tDesc\t1\t10\t1.0\tT\t25-08-2026\t-\t-\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(MergeError, match=r"\[invalid_pfam_accession\]"):
+        plan_interproscan(
+            base,
+            faa_file,
+            bad_pfam_tsv,
+            version="5.59-91.0",
+            member_dbs=("Pfam", "TIGRFAM"),
+        )
+
+    # TIGRFAM with 6 digits instead of 5
+    bad_tigr_tsv = tmp_path / "bad_tigr.tsv"
+    bad_tigr_tsv.write_text(
+        f"{DUMMY_QUERY}\t{DUMMY_MD5}\t{DUMMY_LEN}\tTIGRFAM\tTIGR999999\tDesc\t1\t10\t1.0\tT\t25-08-2026\t-\t-\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(MergeError, match=r"\[invalid_tigrfam_accession\]"):
+        plan_interproscan(
+            base,
+            faa_file,
+            bad_tigr_tsv,
+            version="5.59-91.0",
+            member_dbs=("Pfam", "TIGRFAM"),
+        )
+
+
+def test_unpromoted_member_preserved_as_context(tmp_path: Path) -> None:
+    """Verify member signature from non-enabled member DB is retained in context_signatures."""
+    base_data = record_bytes("REC1", DUMMY_QUERY)
+    base = parse_genbank_bytes(base_data, "base")
+    faa_file = tmp_path / "sample.faa"
+    faa_file.write_bytes(faa_bytes(DUMMY_QUERY))
+
+    pfam_tsv = tmp_path / "pfam.tsv"
+    pfam_tsv.write_text(
+        f"{DUMMY_QUERY}\t{DUMMY_MD5}\t{DUMMY_LEN}\tPfam\tPF02566\tDesc\t1\t10\t1.0\tT\t25-08-2026\t-\t-\n",
+        encoding="utf-8",
+    )
+    # Only TIGRFAM is enabled in member_dbs, so Pfam must NOT be promoted to a note
+    plan = plan_interproscan(
+        base,
+        faa_file,
+        pfam_tsv,
+        version="5.59-91.0",
+        member_dbs=("TIGRFAM",),
+        add_comment_note=False,
+    )
+    # No insertions should be planned for Pfam
+    assert len(plan.insertions) == 0
+    # Context should contain Pfam:PF02566
+    ctx = plan.context_report["entries"][0]
+    assert "Pfam:PF02566" in ctx["context_signatures"]
+
+
+def test_tsv_control_character_rejection(tmp_path: Path) -> None:
+    """Verify TSV line containing non-tab control character is rejected."""
+    bad_ctrl_tsv = tmp_path / "bad_ctrl.tsv"
+    bad_ctrl_tsv.write_bytes(
+        f"{DUMMY_QUERY}\t{DUMMY_MD5}\t{DUMMY_LEN}\tPfam\tPF02566\x1b\tDesc\t1\t10\t1.0\tT\t25-08-2026\t-\t-\n".encode(
+            "utf-8"
+        )
+    )
+    with pytest.raises(MergeError, match=r"contains invalid control character"):
+        stream_interproscan_tsv(bad_ctrl_tsv, "ipr-go-pathways")
+
+
+def test_tsv_invalid_status_and_date(tmp_path: Path) -> None:
+    """Verify TSV row with non-standard status or date format is rejected."""
+    # Bad status
+    bad_status_tsv = tmp_path / "bad_status.tsv"
+    bad_status_tsv.write_text(
+        f"{DUMMY_QUERY}\t{DUMMY_MD5}\t{DUMMY_LEN}\tPfam\tPF02566\tDesc\t1\t10\t1.0\tX\t25-08-2026\t-\t-\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(MergeError, match=r"invalid status"):
+        stream_interproscan_tsv(bad_status_tsv, "ipr-go-pathways")
+
+    # Bad date
+    bad_date_tsv = tmp_path / "bad_date.tsv"
+    bad_date_tsv.write_text(
+        f"{DUMMY_QUERY}\t{DUMMY_MD5}\t{DUMMY_LEN}\tPfam\tPF02566\tDesc\t1\t10\t1.0\tT\t2026/08/25\t-\t-\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(MergeError, match=r"invalid date"):
+        stream_interproscan_tsv(bad_date_tsv, "ipr-go-pathways")

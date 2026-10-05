@@ -63,11 +63,12 @@ MAX_AGGREGATED_QUERIES = 200_000
 MAX_AGGREGATED_CANDIDATES = 500_000
 
 MD5_HEX_RE = re.compile(r"^[0-9a-fA-F]{32}\Z")
+DATE_FORMAT_RE = re.compile(r"^(?:\d{2}-\d{2}-\d{4}|\d{4}-\d{2}-\d{2}|-|\?)\Z")
 
 
-@dataclass(frozen=True)
+@dataclass
 class InterProScanHit:
-    """Parsed, validated hit from an InterProScan TSV row."""
+    """Parsed, validated, and aggregated hit from an InterProScan TSV row."""
 
     query_id: str
     md5: str
@@ -85,6 +86,8 @@ class InterProScanHit:
     go_terms: tuple[str, ...]
     pathways: tuple[str, ...]
     row_number: int
+    occurrence_count: int = 1
+    location_samples: tuple[tuple[int, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -245,12 +248,13 @@ def stream_interproscan_tsv(
 
     hasher = hashlib.sha256()
     pathway_hasher = hashlib.sha256()
-    hits: list[InterProScanHit] = []
+    hits_by_key: dict[tuple[str, str, str], InterProScanHit] = {}
     query_metadata: dict[str, tuple[str, int]] = {}
     pathway_counters: dict[str, Any] = {
         "total_occurrences": 0,
         "by_database": defaultdict(int),
     }
+    pathway_occurrences_by_query: dict[str, int] = defaultdict(int)
     anti_fam_hits: list[dict[str, Any]] = []
     integrated_count = 0
     unintegrated_count = 0
@@ -277,16 +281,21 @@ def stream_interproscan_tsv(
                     f"InterProScan TSV line {row_number} contains invalid UTF-8 at byte {exc.start}"
                 ) from exc
 
-            if "\x00" in line_text:
-                raise MergeError(
-                    f"InterProScan TSV line {row_number} contains embedded NUL character"
-                )
-
             # Strip only line endings, preserving empty fields
             if line_text.endswith("\r\n"):
                 line_text = line_text[:-2]
             elif line_text.endswith("\n") or line_text.endswith("\r"):
                 line_text = line_text[:-1]
+
+            if "\x00" in line_text:
+                raise MergeError(
+                    f"InterProScan TSV line {row_number} contains embedded NUL character"
+                )
+
+            if any((ord(c) < 32 and c != "\t") or ord(c) == 127 for c in line_text):
+                raise MergeError(
+                    f"InterProScan TSV line {row_number} contains invalid control character"
+                )
 
             if not line_text:
                 continue
@@ -360,6 +369,16 @@ def stream_interproscan_tsv(
             status = fields[9].strip()
             date = fields[10].strip()
 
+            if status not in {"T", "F", "?", "-"}:
+                raise MergeError(
+                    f"InterProScan TSV line {row_number} has invalid status {status!r}"
+                )
+
+            if not DATE_FORMAT_RE.fullmatch(date):
+                raise MergeError(
+                    f"InterProScan TSV line {row_number} has invalid date {date!r}"
+                )
+
             # Repeated-query consistency check
             if query_id in query_metadata:
                 prev_md5, prev_len = query_metadata[query_id]
@@ -378,33 +397,60 @@ def stream_interproscan_tsv(
             # Stream pathway occurrences
             for token in pathways:
                 pathway_counters["total_occurrences"] += 1
+                pathway_occurrences_by_query[query_id] += 1
                 db_name = (
                     token.partition(":")[0].strip() if ":" in token else "unspecified"
                 )
-                pathway_counters["by_database"][db_name] += 1
+                if (
+                    len(pathway_counters["by_database"]) < 200
+                    or db_name in pathway_counters["by_database"]
+                ):
+                    pathway_counters["by_database"][db_name] += 1
+                else:
+                    pathway_counters["by_database"]["other"] += 1
                 pathway_hasher.update(f"{query_id}\t{token}\n".encode("utf-8"))
 
             # QC flags (AntiFam)
             if analysis == "AntiFam" or sig_acc.startswith("ANF"):
-                anti_fam_hits.append(
-                    {
-                        "query_id": query_id,
-                        "signature_accession": sig_acc,
-                        "signature_description": sig_desc,
-                        "score": score,
-                        "start": start,
-                        "end": end,
-                        "row_number": row_number,
-                    }
-                )
+                if len(anti_fam_hits) < 1000:
+                    anti_fam_hits.append(
+                        {
+                            "query_id": query_id,
+                            "signature_accession": sig_acc,
+                            "signature_description": sig_desc,
+                            "score": score,
+                            "start": start,
+                            "end": end,
+                            "row_number": row_number,
+                        }
+                    )
 
-            if len(hits) >= MAX_AGGREGATED_CANDIDATES:
-                raise MergeError(
-                    f"InterProScan TSV exceeded maximum hit aggregation limit ({MAX_AGGREGATED_CANDIDATES})"
-                )
-
-            hits.append(
-                InterProScanHit(
+            hit_key = (query_id, analysis, sig_acc)
+            if hit_key in hits_by_key:
+                existing_hit = hits_by_key[hit_key]
+                existing_hit.occurrence_count += 1
+                if len(existing_hit.location_samples) < 5:
+                    existing_hit.location_samples = existing_hit.location_samples + (
+                        (start, end),
+                    )
+                if go_terms:
+                    existing_gos = set(existing_hit.go_terms)
+                    new_gos = [g for g in go_terms if g not in existing_gos]
+                    if new_gos:
+                        existing_hit.go_terms = existing_hit.go_terms + tuple(new_gos)
+                if pathways and len(existing_hit.pathways) < 25:
+                    existing_pws = set(existing_hit.pathways)
+                    new_pws = [p for p in pathways if p not in existing_pws]
+                    if new_pws:
+                        existing_hit.pathways = (
+                            existing_hit.pathways + tuple(new_pws)
+                        )[:25]
+            else:
+                if len(hits_by_key) >= MAX_AGGREGATED_CANDIDATES:
+                    raise MergeError(
+                        f"InterProScan TSV exceeded maximum unique candidate aggregation limit ({MAX_AGGREGATED_CANDIDATES})"
+                    )
+                hits_by_key[hit_key] = InterProScanHit(
                     query_id=query_id,
                     md5=md5,
                     length=length,
@@ -419,11 +465,13 @@ def stream_interproscan_tsv(
                     interpro_accession=ipr_acc,
                     interpro_description=ipr_desc,
                     go_terms=go_terms,
-                    pathways=pathways,
+                    pathways=tuple(pathways[:25]),
                     row_number=row_number,
+                    occurrence_count=1,
+                    location_samples=((start, end),),
                 )
-            )
 
+    hits = list(hits_by_key.values())
     source_sha256 = hasher.hexdigest()
     pathway_digest = pathway_hasher.hexdigest()
     pathway_counters["by_database"] = dict(pathway_counters["by_database"])
@@ -435,6 +483,7 @@ def stream_interproscan_tsv(
         "unintegrated_count": unintegrated_count,
         "query_metadata": query_metadata,
         "pathway_counters": pathway_counters,
+        "pathway_occurrences_by_query": dict(pathway_occurrences_by_query),
         "pathway_digest": pathway_digest,
         "anti_fam_hits": anti_fam_hits,
     }
@@ -639,9 +688,14 @@ def plan_interproscan(
                 )
 
             # 3. Member signatures (Pfam, TIGRFAM)
-            if hit.analysis == "Pfam" and "Pfam" in member_dbs:
-                res_pfam = validate_pfam_accession(hit.signature_accession)
-                if res_pfam:
+            if hit.analysis == "Pfam":
+                if "Pfam" in member_dbs:
+                    res_pfam = validate_pfam_accession(hit.signature_accession)
+                    if not res_pfam:
+                        raise MergeError(
+                            f"InterProScan TSV row {hit.row_number}: [invalid_pfam_accession] "
+                            f"invalid Pfam signature accession {hit.signature_accession!r}"
+                        )
                     canonical, _ = res_pfam
                     proposals.append(
                         (
@@ -654,9 +708,16 @@ def plan_interproscan(
                             hit.row_number,
                         )
                     )
-            elif hit.analysis == "TIGRFAM" and "TIGRFAM" in member_dbs:
-                res_tigr = validate_tigrfam_accession(hit.signature_accession)
-                if res_tigr:
+                else:
+                    context_sigs.append(f"{hit.analysis}:{hit.signature_accession}")
+            elif hit.analysis == "TIGRFAM":
+                if "TIGRFAM" in member_dbs:
+                    res_tigr = validate_tigrfam_accession(hit.signature_accession)
+                    if not res_tigr:
+                        raise MergeError(
+                            f"InterProScan TSV row {hit.row_number}: [invalid_tigrfam_accession] "
+                            f"invalid TIGRFAM signature accession {hit.signature_accession!r}"
+                        )
                     canonical, _ = res_tigr
                     proposals.append(
                         (
@@ -669,6 +730,8 @@ def plan_interproscan(
                             hit.row_number,
                         )
                     )
+                else:
+                    context_sigs.append(f"{hit.analysis}:{hit.signature_accession}")
             else:
                 context_sigs.append(f"{hit.analysis}:{hit.signature_accession}")
 
@@ -759,11 +822,14 @@ def plan_interproscan(
                 }
             )
 
-        if context_sigs or any(h.pathways for h in query_hits):
+        pathway_occurrences = tsv_diag.get("pathway_occurrences_by_query", {}).get(
+            query, 0
+        )
+        if context_sigs or pathway_occurrences > 0:
             per_query_context[query] = {
                 "query_id": query,
                 "context_signatures": sorted(set(context_sigs))[:50],
-                "pathway_occurrences": sum(len(h.pathways) for h in query_hits),
+                "pathway_occurrences": pathway_occurrences,
             }
 
     # Add feature provenance inference for CDSs with new insertions
