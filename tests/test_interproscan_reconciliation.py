@@ -182,7 +182,9 @@ def test_provenance_pruning_when_all_proposals_supported_existing(
 
     tsv_file = FIXTURES_DIR / "valid_ipr_go_pathways.tsv"
 
-    plan = plan_interproscan(base, faa_file, tsv_file, add_comment_note=False)
+    plan = plan_interproscan(
+        base, faa_file, tsv_file, version="5.59-91.0", add_comment_note=False
+    )
 
     # In the plan, since all proposals are already supported_existing,
     # new_qualifier_features was empty, so no producer provenance insertion was planned!
@@ -217,7 +219,7 @@ def test_provenance_emitted_when_new_annotation_survives(tmp_path: Path) -> None
 
     tsv_file = FIXTURES_DIR / "valid_ipr_go_pathways.tsv"
 
-    plan = plan_interproscan(base, faa_file, tsv_file)
+    plan = plan_interproscan(base, faa_file, tsv_file, version="5.59-91.0")
     reconciled, _, _ = reconcile_insertions(plan.insertions)
     candidate_rows, counts = build_candidate_ledger(
         base,
@@ -306,6 +308,7 @@ def test_context_report_sha256_in_manifest(tmp_path: Path) -> None:
         interproscan_path=tsv_file,
         output_path=output_gbff,
         manifest_path=manifest_json,
+        interproscan_version="5.59-91.0",
         context_report_path=context_json,
     )
 

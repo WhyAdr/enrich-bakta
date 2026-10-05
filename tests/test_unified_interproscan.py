@@ -85,6 +85,7 @@ def test_unified_workflow_interproscan_alone(tmp_path: Path) -> None:
         bakta_path=base_file,
         faa_path=faa_file,
         interproscan_path=tsv_file,
+        interproscan_version="5.59-91.0",
         output_path=out_gbff,
         manifest_path=manifest,
         context_report_path=context,
@@ -119,6 +120,29 @@ def test_unified_workflow_context_report_guard(tmp_path: Path) -> None:
         )
 
 
+def test_unified_workflow_requires_interproscan_version(tmp_path: Path) -> None:
+    """Verify enrich() requires explicit interproscan_version when interproscan_path is given."""
+    base_file = tmp_path / "base.gbff"
+    base_file.write_bytes(record_bytes("REC1", DUMMY_QUERY))
+
+    faa_file = tmp_path / "sample.faa"
+    faa_file.write_bytes(faa_bytes(DUMMY_QUERY))
+
+    tsv_file = FIXTURES_DIR / "valid_ipr_go_pathways.tsv"
+    out_gbff = tmp_path / "out.gbff"
+
+    with pytest.raises(
+        MergeError,
+        match=r"InterProScan input requires an explicit --interproscan-version assertion",
+    ):
+        enrich(
+            bakta_path=base_file,
+            faa_path=faa_file,
+            interproscan_path=tsv_file,
+            output_path=out_gbff,
+        )
+
+
 def test_unified_cli_interproscan(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -142,6 +166,8 @@ def test_unified_cli_interproscan(
             str(faa_file),
             "--interproscan",
             str(tsv_file),
+            "--interproscan-version",
+            "5.59-91.0",
             "--output",
             str(out_gbff),
         ],
@@ -149,3 +175,31 @@ def test_unified_cli_interproscan(
     rc = main()
     assert rc == 0
     assert out_gbff.is_file()
+
+
+def test_unified_cli_interproscan_missing_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify unified CLI rejects --interproscan without --interproscan-version."""
+    base_file = tmp_path / "base.gbff"
+    base_file.write_bytes(record_bytes("REC1", DUMMY_QUERY))
+    faa_file = tmp_path / "sample.faa"
+    faa_file.write_bytes(faa_bytes(DUMMY_QUERY))
+    tsv_file = FIXTURES_DIR / "valid_ipr_go_pathways.tsv"
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "enrich-bakta",
+            "--bakta",
+            str(base_file),
+            "--faa",
+            str(faa_file),
+            "--interproscan",
+            str(tsv_file),
+            "--output",
+            str(tmp_path / "out.gbff"),
+        ],
+    )
+    with pytest.raises(SystemExit):
+        main()

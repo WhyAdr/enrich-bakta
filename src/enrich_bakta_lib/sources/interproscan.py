@@ -17,6 +17,7 @@ from enrich_bakta_lib.core.decisions import (
     build_candidate_ledger,
 )
 from enrich_bakta_lib.core.merge_engine import (
+    TOOL_VERSION,
     Insertion,
     MergeError,
     RawDocument,
@@ -25,7 +26,6 @@ from enrich_bakta_lib.core.merge_engine import (
     comment_insertion,
     feature_uid,
     finalize_merge,
-    has_legacy_restoration_comment,
     has_translation_evidence_marker,
     load_translation_evidence,
     normalize_protein,
@@ -35,6 +35,7 @@ from enrich_bakta_lib.core.merge_engine import (
     qualifier_insertion,
     read_input_bytes,
     reconcile_insertions,
+    record_has_legacy_restoration_comment,
     sha256_bytes,
     validate_genbank_semantics,
 )
@@ -445,16 +446,23 @@ def plan_interproscan(
     faa_path: Path,
     interproscan_path: Path,
     *,
-    version: str = DEFAULT_INTERPROSCAN_VERSION,
+    version: str,
     layout: str = DEFAULT_TSV_LAYOUT,
-    member_dbs: tuple[str, ...] = DEFAULT_MEMBER_DBS,
+    member_dbs: tuple[str, ...] | Sequence[str] = DEFAULT_MEMBER_DBS,
     add_comment_note: bool = True,
     add_feature_provenance: bool = True,
     merge_timestamp: str | None = None,
     translation_evidence: Mapping[str, TranslationEvidence] | None = None,
     allow_imported_translations: bool = False,
+    faa_data: bytes | None = None,
+    faa_hash: str | None = None,
+    proteins: Mapping[str, str] | None = None,
 ) -> InterProScanPlan:
     """Plan candidate insertions and evidence rows from InterProScan TSV."""
+    if not version:
+        raise MergeError(
+            "InterProScan input requires an explicit interproscan_version assertion"
+        )
     if version not in SUPPORTED_INTERPROSCAN_VERSIONS:
         raise MergeError(
             f"unsupported InterProScan version {version!r}; verified version is 5.59-91.0"
@@ -464,27 +472,38 @@ def plan_interproscan(
             f"unsupported InterProScan TSV layout {layout!r}; "
             f"supported layouts: {', '.join(TSV_LAYOUT_PROFILES)}"
         )
+    member_dbs = tuple(member_dbs)
 
-    # Known-legacy restoration preflight
-    if has_legacy_restoration_comment(
-        base.data
-    ) and not has_translation_evidence_marker(base.data):
-        raise MergeError(
-            "InterProScan preflight rejected base GenBank file: known legacy restoration provenance "
-            "detected (normalize_baktfold.py) without verified translation-evidence marker; "
-            "bound translation-evidence manifest is required"
-        )
+    # Known-legacy restoration preflight: inspect COMMENT/header per record
+    for rec in base.records:
+        rec_header = base.data[rec.start : rec.features_offset]
+        if record_has_legacy_restoration_comment(rec_header):
+            if not has_translation_evidence_marker(rec_header):
+                raise MergeError(
+                    "InterProScan preflight rejected base GenBank file: known legacy restoration provenance "
+                    "detected (normalize_baktfold.py) without verified translation-evidence marker; "
+                    "bound translation-evidence manifest is required"
+                )
 
-    faa_bytes = read_input_bytes(faa_path, "FAA")
-    faa_hash = sha256_bytes(faa_bytes)
-    proteins = parse_faa(faa_bytes)
+    if faa_data is not None:
+        faa_bytes = faa_data
+        actual_faa_hash = faa_hash or sha256_bytes(faa_data)
+        actual_proteins = proteins if proteins is not None else parse_faa(faa_data)
+        if faa_path and faa_path.is_file():
+            disk_bytes = read_input_bytes(faa_path, "FAA")
+            if sha256_bytes(disk_bytes) != actual_faa_hash:
+                raise MergeError(f"FAA input {faa_path} was modified after capture")
+    else:
+        faa_bytes = read_input_bytes(faa_path, "FAA")
+        actual_faa_hash = sha256_bytes(faa_bytes)
+        actual_proteins = parse_faa(faa_bytes)
 
     source_sha256, hits, tsv_diag = stream_interproscan_tsv(interproscan_path, layout)
 
     cds = cds_by_locus(base)
     queried_ids = sorted(tsv_diag["query_metadata"].keys())
 
-    missing_faa = [q for q in queried_ids if q not in proteins]
+    missing_faa = [q for q in queried_ids if q not in actual_proteins]
     missing_gbff = [q for q in queried_ids if q not in cds]
     if missing_faa or missing_gbff:
         raise MergeError(
@@ -494,7 +513,7 @@ def plan_interproscan(
     # Validate FAA sequence against TSV MD5 and length
     mismatches: list[str] = []
     for query in queried_ids:
-        seq = proteins[query]
+        seq = actual_proteins[query]
         expected_md5, expected_len = tsv_diag["query_metadata"][query]
         if (
             len(seq) != expected_len
@@ -513,12 +532,25 @@ def plan_interproscan(
         translations = cds[query].values("translation")
         if len(translations) != 1 or not normalize_protein(translations[0]):
             missing_translations.append(query)
-        elif normalize_protein(translations[0]) != proteins[query]:
+        elif normalize_protein(translations[0]) != actual_proteins[query]:
             seq_mismatches.append(query)
     if missing_translations or seq_mismatches:
         raise MergeError(
             f"InterProScan FAA/GBFF protein validation failed: {json.dumps({'missing_or_ambiguous_translation': missing_translations[:25], 'sequence_mismatches': seq_mismatches[:25]}, indent=2)}"
         )
+
+    # Per-record legacy provenance check for queried CDSs
+    record_by_id = {rec.record_id: rec for rec in base.records}
+    for query in queried_ids:
+        feature = cds[query]
+        rec = record_by_id[feature.record_id]
+        rec_header = base.data[rec.start : rec.features_offset]
+        if record_has_legacy_restoration_comment(rec_header):
+            if translation_evidence is None or query not in translation_evidence:
+                raise MergeError(
+                    f"InterProScan rejected unverified legacy translation for {query!r}: "
+                    "genuine translation evidence is required"
+                )
 
     # Translation evidence lifecycle checks
     if translation_evidence is not None:
@@ -545,7 +577,7 @@ def plan_interproscan(
                 raise MergeError(
                     f"InterProScan translation evidence ledger disagrees for {query_id!r}"
                 )
-            if evidence.protein_sha256 != protein_sha256(proteins[query_id]):
+            if evidence.protein_sha256 != protein_sha256(actual_proteins[query_id]):
                 raise MergeError(
                     f"InterProScan translation evidence ledger disagrees for {query_id!r}"
                 )
@@ -787,7 +819,7 @@ def plan_interproscan(
     if add_comment_note:
         lines = [
             f"Source InterProScan {version}; layout={layout}; tsv sha256={source_sha256[:16]}",
-            f"FAA sha256={faa_hash[:16]}; member-dbs={','.join(member_dbs) or 'none'}.",
+            f"FAA sha256={actual_faa_hash[:16]}; member-dbs={','.join(member_dbs) or 'none'}.",
             "InterProScan calls are sequence-feature evidence, not proof of function.",
         ]
         if merge_timestamp:
@@ -796,7 +828,7 @@ def plan_interproscan(
             c_ins = comment_insertion(
                 base,
                 record,
-                f"{INTERPROSCAN_COMMENT_MARKER}:{source_sha256[:12]}:{faa_hash[:12]}",
+                f"{INTERPROSCAN_COMMENT_MARKER}:{source_sha256[:12]}:{actual_faa_hash[:12]}",
                 lines,
                 "InterProScan provenance",
                 order,
@@ -832,7 +864,7 @@ def plan_interproscan(
             "queries": len(tsv_diag["query_metadata"]),
             "matched_queries": len(queried_ids),
             "identity_diagnostics": {
-                "faa_records": len(proteins),
+                "faa_records": len(actual_proteins),
                 "gbff_records": len(base.records),
                 "gbff_cds": len(cds),
                 "matched_queries": len(queried_ids),
@@ -866,7 +898,7 @@ def merge(
     output_path: Path,
     *,
     manifest_path: Path | None = None,
-    interproscan_version: str = DEFAULT_INTERPROSCAN_VERSION,
+    interproscan_version: str | None = None,
     interproscan_tsv_layout: str = DEFAULT_TSV_LAYOUT,
     interproscan_member_dbs: str | Sequence[str] = DEFAULT_MEMBER_DBS,
     add_comment_note: bool = True,
@@ -877,6 +909,10 @@ def merge(
     allow_imported_translations: bool = False,
 ) -> dict[str, Any]:
     """Execute standalone InterProScan merge pipeline."""
+    if not interproscan_version:
+        raise MergeError(
+            "InterProScan input requires an explicit interproscan_version assertion"
+        )
     base_data = read_input_bytes(bakta_path, "Bakta")
     validate_genbank_semantics(base_data, "Bakta input")
     base = parse_genbank_bytes(base_data, "Bakta input")
@@ -888,6 +924,10 @@ def merge(
         if translation_evidence_manifest
         else None
     )
+
+    faa_bytes = read_input_bytes(faa_path, "FAA")
+    faa_hash = sha256_bytes(faa_bytes)
+    proteins = parse_faa(faa_bytes)
 
     plan = plan_interproscan(
         base,
@@ -901,6 +941,9 @@ def merge(
         merge_timestamp=merge_timestamp,
         translation_evidence=translation_evidence,
         allow_imported_translations=allow_imported_translations,
+        faa_data=faa_bytes,
+        faa_hash=faa_hash,
+        proteins=proteins,
     )
 
     reconciled, _rows, _stats = reconcile_insertions(plan.insertions)
@@ -915,14 +958,31 @@ def merge(
     )
 
     metadata: dict[str, Any] = {
-        "source_hashes": source_hashes,
+        "operation": "interproscan-merge",
+        "merge_timestamp": merge_timestamp or "",
+        "faa_sha256": plan.stats.get("faa_sha256", faa_hash),
+        "interproscan_sha256": plan.source_sha256,
         "interproscan_version": plan.version,
         "interproscan_tsv_layout": plan.layout,
         "member_dbs": list(plan.member_dbs),
+        "translation_evidence_manifest": (
+            str(translation_evidence_manifest) if translation_evidence_manifest else ""
+        ),
+        "allow_imported_translations": allow_imported_translations,
+        "translation_evidence": {
+            query: evidence.as_dict()
+            for query, evidence in (translation_evidence or {}).items()
+        },
+        "translation_evidence_parent_sha256": getattr(
+            translation_evidence, "manifest_sha256", ""
+        ),
+        "policies": {
+            "add_comment_note": add_comment_note,
+            "add_feature_provenance": add_feature_provenance,
+        },
+        "source_hashes": source_hashes,
         **ledger_counts,
     }
-    if translation_evidence is not None:
-        metadata["translation_evidence"] = translation_evidence
 
     other_inputs = [faa_path, interproscan_path]
     if translation_evidence_manifest:
@@ -949,34 +1009,69 @@ def build_parser() -> argparse.ArgumentParser:
         description="Enrich Bakta GenBank annotations with InterProScan evidence",
     )
     parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {TOOL_VERSION}"
+    )
+    parser.add_argument(
+        "bakta_pos",
+        nargs="?",
+        type=Path,
+        default=None,
+        metavar="bakta",
+        help="Path to input Bakta GenBank flatfile (.gbff)",
+    )
+    parser.add_argument(
+        "faa_pos",
+        nargs="?",
+        type=Path,
+        default=None,
+        metavar="faa",
+        help="Path to input Bakta matched protein FASTA (.faa)",
+    )
+    parser.add_argument(
+        "interproscan_pos",
+        nargs="?",
+        type=Path,
+        default=None,
+        metavar="interproscan",
+        help="Path to input InterProScan TSV output",
+    )
+    parser.add_argument(
+        "output_pos",
+        nargs="?",
+        type=Path,
+        default=None,
+        metavar="output",
+        help="Path to write enriched GenBank file",
+    )
+    parser.add_argument(
         "--bakta",
         type=Path,
-        required=True,
+        default=None,
         help="Path to input Bakta GenBank flatfile (.gbff)",
     )
     parser.add_argument(
         "--faa",
         type=Path,
-        required=True,
+        default=None,
         help="Path to input Bakta matched protein FASTA (.faa)",
     )
     parser.add_argument(
         "--interproscan",
         type=Path,
-        required=True,
+        default=None,
         help="Path to input InterProScan TSV output",
     )
     parser.add_argument(
         "--output",
         type=Path,
-        required=True,
+        default=None,
         help="Path to write enriched GenBank file",
     )
     parser.add_argument(
         "--interproscan-version",
         type=str,
-        default=DEFAULT_INTERPROSCAN_VERSION,
-        help=f"Asserted InterProScan producer version (default: {DEFAULT_INTERPROSCAN_VERSION})",
+        default=None,
+        help="Asserted InterProScan producer version (e.g. 5.59-91.0; required)",
     )
     parser.add_argument(
         "--interproscan-tsv-layout",
@@ -1037,12 +1132,31 @@ def main(argv: Sequence[str] | None = None) -> int:
     """CLI entry point for standalone InterProScan merge."""
     parser = build_parser()
     args = parser.parse_args(argv)
+    bakta = args.bakta or args.bakta_pos
+    faa = args.faa or args.faa_pos
+    interproscan = args.interproscan or args.interproscan_pos
+    output = args.output or args.output_pos
+    if not (bakta and faa and interproscan and output):
+        parser.error(
+            "the following arguments are required: bakta, faa, interproscan, output "
+            "(positional or via --bakta, --faa, --interproscan, --output)"
+        )
+    if not args.interproscan_version:
+        parser.error("--interproscan-version is required")
+    for label, path in (
+        ("Bakta", bakta),
+        ("FAA", faa),
+        ("InterProScan", interproscan),
+        ("Translation evidence", args.translation_evidence_manifest),
+    ):
+        if path is not None and not path.is_file():
+            parser.error(f"{label} input not found: {path}")
     try:
         merge(
-            bakta_path=args.bakta,
-            faa_path=args.faa,
-            interproscan_path=args.interproscan,
-            output_path=args.output,
+            bakta_path=bakta,
+            faa_path=faa,
+            interproscan_path=interproscan,
+            output_path=output,
             manifest_path=args.manifest,
             interproscan_version=args.interproscan_version,
             interproscan_tsv_layout=args.interproscan_tsv_layout,

@@ -30,7 +30,6 @@ from enrich_bakta_lib.core.merge_engine import (
 from enrich_bakta_lib.sources.baktfold import plan_baktfold_additions
 from enrich_bakta_lib.sources.eggnog import parse_eggnog_path, plan_eggnog_additions
 from enrich_bakta_lib.sources.interproscan import (
-    DEFAULT_INTERPROSCAN_VERSION,
     DEFAULT_MEMBER_DBS,
     DEFAULT_TSV_LAYOUT,
     TSV_LAYOUT_PROFILES,
@@ -79,6 +78,10 @@ def enrich(
         raise MergeError("--eggnog-version requires --eggnog")
     if eggnog_schema and eggnog_path is None:
         raise MergeError("--eggnog-schema requires --eggnog")
+    if interproscan_path is not None and not interproscan_version:
+        raise MergeError(
+            "InterProScan input requires an explicit --interproscan-version assertion"
+        )
     if interproscan_version and interproscan_path is None:
         raise MergeError("--interproscan-version requires --interproscan")
     if interproscan_tsv_layout and interproscan_path is None:
@@ -264,6 +267,7 @@ def enrich(
         other_inputs.append(eggnog_path)
     if interproscan_path:
         assert faa_path is not None
+        assert interproscan_version is not None
         member_dbs = parse_member_dbs(
             interproscan_member_dbs
             if interproscan_member_dbs is not None
@@ -273,7 +277,7 @@ def enrich(
             base,
             faa_path,
             interproscan_path,
-            version=interproscan_version or DEFAULT_INTERPROSCAN_VERSION,
+            version=interproscan_version,
             layout=interproscan_tsv_layout or DEFAULT_TSV_LAYOUT,
             member_dbs=member_dbs,
             add_comment_note=add_comment_note,
@@ -281,6 +285,9 @@ def enrich(
             merge_timestamp=merge_timestamp,
             translation_evidence=translation_evidence,
             allow_imported_translations=allow_imported_translations,
+            faa_data=faa_data,
+            faa_hash=metadata["faa_sha256"],
+            proteins=proteins,
         )
         insertions.extend(plan_ips.insertions)
         evidence_rows.extend(plan_ips.evidence_rows)
@@ -377,7 +384,7 @@ def main() -> int:
     parser.add_argument(
         "--interproscan-version",
         default=None,
-        help=f"asserted InterProScan producer version (default: {DEFAULT_INTERPROSCAN_VERSION})",
+        help="asserted InterProScan producer version (e.g. 5.59-91.0; required when --interproscan is provided)",
     )
     parser.add_argument(
         "--interproscan-tsv-layout",
@@ -419,6 +426,10 @@ def main() -> int:
     ):
         if path is not None and not path.is_file():
             parser.error(f"{label} input not found: {path}")
+    if args.interproscan and not args.interproscan_version:
+        parser.error(
+            "--interproscan-version is required when --interproscan is provided"
+        )
     try:
         stats = enrich(
             bakta_path=args.bakta,

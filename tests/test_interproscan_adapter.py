@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -212,7 +213,7 @@ def test_missing_queries_in_faa_vs_tsv_vs_gbff(tmp_path: Path) -> None:
         MergeError,
         match=r"(?s)InterProScan query IDs do not map exactly.*missing_from_faa",
     ):
-        plan_interproscan(base, faa_file, tsv_extra_query)
+        plan_interproscan(base, faa_file, tsv_extra_query, version="5.59-91.0")
 
     # 2. TSV query present in FAA but missing from GBFF
     faa_different = tmp_path / "different.faa"
@@ -226,7 +227,7 @@ def test_missing_queries_in_faa_vs_tsv_vs_gbff(tmp_path: Path) -> None:
         MergeError,
         match=r"(?s)InterProScan query IDs do not map exactly.*missing_from_gbff",
     ):
-        plan_interproscan(base, faa_different, tsv_different)
+        plan_interproscan(base, faa_different, tsv_different, version="5.59-91.0")
 
 
 def test_sequence_md5_length_mismatch_between_faa_and_tsv(tmp_path: Path) -> None:
@@ -242,7 +243,7 @@ def test_sequence_md5_length_mismatch_between_faa_and_tsv(tmp_path: Path) -> Non
         MergeError,
         match=r"(?s)InterProScan FAA protein validation failed.*sequence_mismatches",
     ):
-        plan_interproscan(base, bad_faa, valid_tsv)
+        plan_interproscan(base, bad_faa, valid_tsv, version="5.59-91.0")
 
 
 def test_missing_translation_failure(tmp_path: Path) -> None:
@@ -260,7 +261,7 @@ def test_missing_translation_failure(tmp_path: Path) -> None:
         match=r"(?s)InterProScan FAA/GBFF protein validation failed:.*missing_or_ambiguous_translation.*"
         + DUMMY_QUERY,
     ):
-        plan_interproscan(base, faa_file, valid_tsv)
+        plan_interproscan(base, faa_file, valid_tsv, version="5.59-91.0")
 
 
 def test_known_legacy_restoration_preflight_failure(tmp_path: Path) -> None:
@@ -276,7 +277,7 @@ def test_known_legacy_restoration_preflight_failure(tmp_path: Path) -> None:
     with pytest.raises(
         MergeError, match=r"known legacy restoration provenance detected"
     ):
-        plan_interproscan(base, faa_file, valid_tsv)
+        plan_interproscan(base, faa_file, valid_tsv, version="5.59-91.0")
 
 
 def test_standalone_merge_and_cli(tmp_path: Path) -> None:
@@ -303,6 +304,7 @@ def test_standalone_merge_and_cli(tmp_path: Path) -> None:
         interproscan_path=tsv_file,
         output_path=output_gbff,
         manifest_path=manifest_json,
+        interproscan_version="5.59-91.0",
         context_report_path=context_json,
         merge_timestamp="2026-10-04T12:00:00Z",
     )
@@ -326,6 +328,180 @@ def test_standalone_merge_and_cli(tmp_path: Path) -> None:
             str(tsv_file),
             "--output",
             str(base_file),  # colliding output path should fail cleanly
+            "--interproscan-version",
+            "5.59-91.0",
         ]
     )
     assert rc == 1
+
+
+def test_late_legacy_comment_detection(tmp_path: Path) -> None:
+    """Verify legacy comment appearing after byte offset 100,000 is still caught and rejected."""
+    padding_lines = ["COMMENT     " + ("x" * 70) for _ in range(1500)]
+    padding_lines.append("COMMENT     normalize_baktfold.py: restore Bakta provenance")
+    large_comment = "\n".join(padding_lines)
+    assert len(large_comment) > 100_000
+    base_data = record_bytes("REC1", DUMMY_QUERY, comment_header=large_comment)
+    base = parse_genbank_bytes(base_data, "base")
+    faa_file = tmp_path / "test.faa"
+    faa_file.write_bytes(faa_bytes(DUMMY_QUERY))
+    valid_tsv = FIXTURES_DIR / "valid_ipr_go_pathways.tsv"
+    with pytest.raises(
+        MergeError, match=r"known legacy restoration provenance detected"
+    ):
+        plan_interproscan(base, faa_file, valid_tsv, version="5.59-91.0")
+
+
+def test_mixed_legacy_and_marked_records(tmp_path: Path) -> None:
+    """Verify that a multi-record file where one record has legacy comment without marker is rejected."""
+    rec1 = record_bytes(
+        "REC1",
+        DUMMY_QUERY,
+        comment_header="COMMENT     EnrichBakta:translation_evidence:validmarker",
+    )
+    rec2 = record_bytes(
+        "REC2",
+        "OTHER_001",
+        comment_header="COMMENT     normalize_baktfold.py: restore Bakta provenance",
+    )
+    base = parse_genbank_bytes(rec1 + rec2, "base")
+    faa_file = tmp_path / "test.faa"
+    faa_file.write_bytes(faa_bytes(DUMMY_QUERY))
+    valid_tsv = FIXTURES_DIR / "valid_ipr_go_pathways.tsv"
+    with pytest.raises(
+        MergeError, match=r"known legacy restoration provenance detected"
+    ):
+        plan_interproscan(base, faa_file, valid_tsv, version="5.59-91.0")
+
+
+def test_faa_mutation_after_capture_rejected(tmp_path: Path) -> None:
+    """Verify that mutating the FAA file on disk after capture raises MergeError."""
+    base_data = record_bytes("REC1", DUMMY_QUERY)
+    base = parse_genbank_bytes(base_data, "base")
+    faa_file = tmp_path / "test.faa"
+    faa_content = faa_bytes(DUMMY_QUERY)
+    faa_file.write_bytes(faa_content)
+    valid_tsv = FIXTURES_DIR / "valid_ipr_go_pathways.tsv"
+
+    # We mutate faa_file on disk while passing original faa_content
+    faa_file.write_bytes(faa_content + b"\n# mutated")
+    with pytest.raises(MergeError, match="modified after capture"):
+        plan_interproscan(
+            base,
+            faa_file,
+            valid_tsv,
+            version="5.59-91.0",
+            faa_data=faa_content,
+        )
+
+
+def test_standalone_merge_restored_input_with_translation_evidence_manifest(
+    tmp_path: Path,
+) -> None:
+    """Verify standalone merge() serializes translation evidence manifest without TypeError and supports reruns."""
+    from test_merge_pipeline import eggnog_bytes
+
+    from enrich_bakta_lib.workflows.restore_translations import restore
+
+    base_raw = record_bytes("REC1", DUMMY_QUERY).replace(
+        f'                     /translation="{DUMMY_SEQ}"\n'.encode("ascii"),
+        b'                     /pseudogene="unitary"\n',
+    )
+    base_file = tmp_path / "base.gbff"
+    base_file.write_bytes(base_raw)
+
+    faa_file = tmp_path / "sample.faa"
+    faa_file.write_bytes(faa_bytes(DUMMY_QUERY))
+
+    eggnog_file = tmp_path / "eggnog.tsv"
+    eggnog_file.write_bytes(
+        eggnog_bytes(f"{DUMMY_QUERY}\tseed\t1e-4\t10\t-\t-\t-\t-\t-\t-\thhhhhhhhhhhhh")
+    )
+
+    restored_gbff = tmp_path / "restored.gbff"
+    restored_manifest = tmp_path / "restored_manifest.json"
+
+    restore(
+        base_file,
+        faa_file,
+        eggnog_file,
+        restored_gbff,
+        manifest_path=restored_manifest,
+        translation_policy="import-faa",
+    )
+
+    tsv_file = FIXTURES_DIR / "valid_ipr_go_pathways.tsv"
+    out_gbff = tmp_path / "merged_output.gbff"
+    out_manifest = tmp_path / "merged_manifest.json"
+    out_context = tmp_path / "merged_context.json"
+
+    res = merge(
+        bakta_path=restored_gbff,
+        faa_path=faa_file,
+        interproscan_path=tsv_file,
+        output_path=out_gbff,
+        manifest_path=out_manifest,
+        interproscan_version="5.59-91.0",
+        translation_evidence_manifest=restored_manifest,
+        allow_imported_translations=True,
+        context_report_path=out_context,
+    )
+
+    assert res["self_check"] is True
+    assert out_gbff.is_file()
+    assert out_manifest.is_file()
+
+    manifest_data = json.loads(out_manifest.read_text(encoding="utf-8"))
+    assert "translation_evidence" in manifest_data["metadata"]
+    assert DUMMY_QUERY in manifest_data["metadata"]["translation_evidence"]
+    assert (
+        manifest_data["metadata"]["translation_evidence"][DUMMY_QUERY]["origin"]
+        == "imported_faa"
+    )
+    assert manifest_data["metadata"]["operation"] == "interproscan-merge"
+    assert manifest_data["metadata"]["interproscan_version"] == "5.59-91.0"
+
+    rerun_out = tmp_path / "rerun_output.gbff"
+    rerun_manifest = tmp_path / "rerun_manifest.json"
+    rerun_res = merge(
+        bakta_path=out_gbff,
+        faa_path=faa_file,
+        interproscan_path=tsv_file,
+        output_path=rerun_out,
+        manifest_path=rerun_manifest,
+        interproscan_version="5.59-91.0",
+        translation_evidence_manifest=out_manifest,
+        allow_imported_translations=True,
+    )
+    assert rerun_res["self_check"] is True
+
+
+def test_cli_positional_args_and_version(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Verify positional invocation and --version flag."""
+    base_file = tmp_path / "base.gbff"
+    base_file.write_bytes(record_bytes("REC1", DUMMY_QUERY))
+    faa_file = tmp_path / "sample.faa"
+    faa_file.write_bytes(faa_bytes(DUMMY_QUERY))
+    tsv_file = FIXTURES_DIR / "valid_ipr_go_pathways.tsv"
+    out_file = tmp_path / "pos_out.gbff"
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--version"])
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "merge_interproscan_bakta" in captured.out
+
+    rc = main(
+        [
+            str(base_file),
+            str(faa_file),
+            str(tsv_file),
+            str(out_file),
+            "--interproscan-version",
+            "5.59-91.0",
+        ]
+    )
+    assert rc == 0
+    assert out_file.is_file()

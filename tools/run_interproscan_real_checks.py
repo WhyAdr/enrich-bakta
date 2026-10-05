@@ -100,6 +100,7 @@ def run_checks(root: Path, output: Path) -> int:
             bakta_path=c14_gbff,
             faa_path=c14_faa,
             interproscan_path=c14_tsv,
+            interproscan_version="5.59-91.0",
             output_path=out_gbff,
             manifest_path=manifest_path,
             context_report_path=context_path,
@@ -158,6 +159,7 @@ def run_checks(root: Path, output: Path) -> int:
                 bakta_path=sm_gbff,
                 faa_path=sm_faa,
                 interproscan_path=sm_tsv,
+                interproscan_version="5.59-91.0",
                 output_path=out_gbff,
             )
         except MergeError as exc:
@@ -217,6 +219,7 @@ def run_checks(root: Path, output: Path) -> int:
             bakta_path=sm_restored_gbff,
             faa_path=sm_faa,
             interproscan_path=sm_tsv,
+            interproscan_version="5.59-91.0",
             translation_evidence_manifest=sm_restored_manifest,
             allow_imported_translations=True,
             output_path=out_gbff,
@@ -274,6 +277,7 @@ def run_checks(root: Path, output: Path) -> int:
                 bakta_path=bk_restored,
                 faa_path=c14_faa,
                 interproscan_path=bk_tsv,
+                interproscan_version="5.59-91.0",
                 output_path=out_gbff,
             )
         except MergeError as exc:

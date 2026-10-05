@@ -739,13 +739,19 @@ def has_translation_evidence_marker(data: bytes) -> bool:
 
 
 LEGACY_RESTORATION_COMMENT_RE = re.compile(
-    rb"normalize_baktfold\.py.*restore Bakta\s+provenance", re.DOTALL
+    rb"(?:Post-processed by\s+)?normalize_baktfold\.py(?::|\s+to)\s+restore Bakta\s+provenance",
+    re.IGNORECASE,
 )
 
 
+def record_has_legacy_restoration_comment(header_bytes: bytes) -> bool:
+    """Detect known legacy normalize_baktfold.py restoration comment in a record header."""
+    return bool(LEGACY_RESTORATION_COMMENT_RE.search(header_bytes))
+
+
 def has_legacy_restoration_comment(data: bytes) -> bool:
-    """Detect known legacy normalize_baktfold.py restoration comment."""
-    return bool(LEGACY_RESTORATION_COMMENT_RE.search(data[:100_000]))
+    """Detect known legacy normalize_baktfold.py restoration comment across data."""
+    return bool(LEGACY_RESTORATION_COMMENT_RE.search(data))
 
 
 def load_translation_evidence(
