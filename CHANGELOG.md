@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- Closed residual `0.4.1` InterProScan audit gaps: populated `metadata.sources` in combined
+  `enrich-bakta.context.v1` envelopes, fixed direct `plan_interproscan()` `faa_sha256` reporting,
+  wired per-candidate match evidence summaries (`occurrence_count`, `location_samples`,
+  `match_evidence_digest`), explicit context truncation counters, per-query pathway DB counts,
+  `re.ASCII` accession/coordinate grammars, native score validation, exact 1 MiB CRLF line-ceiling
+  handling, and GenBank `COMMENT`-scoped legacy restoration detection.
+- Decomposed `core/merge_engine.py` into focused acyclic submodules (`types.py`, `genbank.py`,
+  `lineage.py`, `splicer.py`, `reconcile.py`, `artifacts.py`) behind a backwards-compatible facade.
+- Eliminated redundant Biopython GenBank parses (`6 -> 2` per merge) by reusing pre-parsed
+  `RawDocument` instances in `finalize_merge()`.
+- Standardized all four evidence sources onto `MergeContext`, `SourcePlan`, and `SourceAdapter`
+  in `sources/base.py` and unified standalone and multi-source orchestration onto
+  `workflows/pipeline.py`.
+- Organized root planning/audit handoff documents under `docs/plans/` and `docs/audits/` and
+  added normalized LF line-ending rules in `.gitattributes`.
+
 ## 0.4.1 - 2026-10-05
 
 - Repaired standalone translation restoration JSON serialization (`evidence.as_dict()`).

@@ -21,17 +21,25 @@ cross-file transaction.
 
 | Path | Purpose |
 |---|---|
-| `src/enrich_bakta_lib/core/merge_engine.py` | Shared semantic/raw parity, byte splicing, artifact staging, provenance, and manifest support. |
+| `src/enrich_bakta_lib/core/types.py` | Core data models (`RawDocument`, `Insertion`, `TranslationEvidence`), `MergeError`, and hashing primitives. |
+| `src/enrich_bakta_lib/core/genbank.py` | Raw/semantic GenBank and FAA parsing, feature indexing, and structural parity checks. |
+| `src/enrich_bakta_lib/core/lineage.py` | Translation-evidence ledger loading/binding and GenBank `COMMENT`-scoped legacy restoration detection. |
+| `src/enrich_bakta_lib/core/splicer.py` | Byte-preserving qualifier/`COMMENT` formatting, splicing, reversibility audit, and semantic round-trip verification. |
+| `src/enrich_bakta_lib/core/reconcile.py` | Cross-source overlap deduplication, paired gene-conflict policy, and orphan provenance pruning. |
+| `src/enrich_bakta_lib/core/artifacts.py` | Collision preflight, manifest/sidecar serialization, atomic staging, and `finalize_merge()`. |
+| `src/enrich_bakta_lib/core/merge_engine.py` | Backwards-compatible re-export facade over the core submodules above. |
 | `src/enrich_bakta_lib/core/decisions.py` | Typed deterministic candidate IDs, final decision ledger, and invariant checks. |
+| `src/enrich_bakta_lib/sources/base.py` | Uniform `MergeContext`, `SourcePlan`, and `SourceAdapter` protocol shared across all source adapters. |
 | `src/enrich_bakta_lib/sources/baktfold.py` | Strict Baktfold parity and conservative gene/EC/structural additions. |
 | `src/enrich_bakta_lib/sources/kofam.py` | FAA-validated Kofam hit parsing, KO evidence, and optional one-pass Baktfold merge. |
 | `src/enrich_bakta_lib/sources/eggnog.py` | Schema-selected eggNOG TSV/XLSX parsing, value rules, context reporting, and evidence transfer. |
 | `src/enrich_bakta_lib/sources/interproscan.py` | Streaming TSV parser, layout profile validation, member database note promotion, and InterPro evidence transfer. |
-| `src/enrich_bakta_lib/workflows/enrich.py` | Canonical one-pass multi-source workflow. |
+| `src/enrich_bakta_lib/workflows/pipeline.py` | Shared single-snapshot context capture, sidecar envelope assembly, and merge orchestration pipeline. |
+| `src/enrich_bakta_lib/workflows/enrich.py` | Canonical one-pass multi-source workflow CLI. |
 | `src/enrich_bakta_lib/workflows/restore_translations.py` | Policy-controlled translation restoration with a downstream evidence ledger. |
 | `legacy/normalize_baktfold.py` | Historical normalization utility retained outside the supported package and byte-preserving path. |
 | `Root *.py` names | Compatibility launchers for migrated modules; new code should import the canonical package. |
-| `tests/` | Synthetic parity, preservation, qualifier, KO, failure, CRLF, and idempotence tests. |
+| `tests/` | Synthetic parity, preservation, qualifier, KO, failure, CRLF, schema, and idempotence tests. |
 
 Python 3.10 or later and Biopython 1.83 or later are required. Install the
 supported commands with `python -m pip install .`; use `.[xlsx]` for XLSX input
