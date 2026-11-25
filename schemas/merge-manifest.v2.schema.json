@@ -38,6 +38,10 @@
         "member_dbs": {
           "type": "array",
           "items": {"type": "string"}
+        },
+        "interproscan_member_dbs": {
+          "type": "array",
+          "items": {"type": "string"}
         }
       },
       "additionalProperties": true
@@ -235,6 +239,19 @@
         "planned_emitted_qualifiers": {"type": "string"},
         "support_witness": {"type": ["string", "null"]},
         "row_number": {"type": "integer", "minimum": 0},
+        "occurrence_count": {"type": "integer", "minimum": 1},
+        "location_samples": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {"type": "integer", "minimum": 1}
+          }
+        },
+        "location_samples_truncated": {"type": "boolean"},
+        "match_evidence_digest": {"$ref": "#/$defs/sha256"},
         "source": {"const": "InterProScan"},
         "reason": {"type": "string"},
         "candidate_id": {

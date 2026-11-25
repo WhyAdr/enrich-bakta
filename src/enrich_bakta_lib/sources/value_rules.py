@@ -8,16 +8,18 @@ from dataclasses import dataclass
 
 from enrich_bakta_lib.core.merge_engine import MergeError
 
-EC_FULL_RE = re.compile(r"\d+\.\d+\.\d+\.\d+\Z")
-EC_PARTIAL_RE = re.compile(r"(?:\d+\.\d+\.\d+\.-|\d+\.\d+\.-\.-|\d+\.-\.-\.-)\Z")
+EC_FULL_RE = re.compile(r"\d+\.\d+\.\d+\.\d+\Z", re.ASCII)
+EC_PARTIAL_RE = re.compile(
+    r"(?:\d+\.\d+\.\d+\.-|\d+\.\d+\.-\.-|\d+\.-\.-\.-)\Z", re.ASCII
+)
 STRUCTURED_TOKEN_RE = re.compile(
-    r"(?:GO:\d{7}|KEGG:K\d{5}|CAZy:(?:GH|GT|PL|CE|AA|CBM)\d+(?:_\d+)?)\Z"
+    r"(?:GO:\d{7}|KEGG:K\d{5}|CAZy:(?:GH|GT|PL|CE|AA|CBM)\d+(?:_\d+)?)\Z", re.ASCII
 )
 STRUCTURED_TOKEN_SEARCH_RE = re.compile(
-    r"(?:GO:\d{7}|KEGG:K\d{5}|CAZy:(?:GH|GT|PL|CE|AA|CBM)\d+(?:_\d+)?)"
+    r"(?:GO:\d{7}|KEGG:K\d{5}|CAZy:(?:GH|GT|PL|CE|AA|CBM)\d+(?:_\d+)?)", re.ASCII
 )
 KOFAM_NOTE_RE = re.compile(
-    r"KofamScan:(K\d{5});threshold=[^;]+;score=[^;]+;E-value=[^;]+\Z"
+    r"KofamScan:(K\d{5});threshold=[^;]+;score=[^;]+;E-value=[^;]+\Z", re.ASCII
 )
 MISSING_VALUES = {"", "-", "NA"}
 
@@ -173,13 +175,13 @@ def structured_tokens_in_text(value: str) -> tuple[str, ...]:
     )
 
 
-# Grammars for member databases and functional accessions
-PFAM_MEMBER_RE = re.compile(r"PFAM:(PF\d{5})(?:\.([1-9]\d*))?\Z")
-TIGRFAM_MEMBER_RE = re.compile(r"TIGRFAM:(TIGR\d{5})(?:\.([1-9]\d*))?\Z")
-INTERPRO_ACCESSION_RE = re.compile(r"IPR\d{6}\Z")
-GO_TERM_RE = re.compile(r"GO:\d{7}\Z")
-PFAM_ACCESSION_RE = re.compile(r"(PF\d{5})(?:\.([1-9]\d*))?\Z")
-TIGRFAM_ACCESSION_RE = re.compile(r"(TIGR\d{5})(?:\.([1-9]\d*))?\Z")
+# Grammars for member databases and functional accessions (ASCII digits only)
+PFAM_MEMBER_RE = re.compile(r"PFAM:(PF\d{5})(?:\.([1-9]\d*))?\Z", re.ASCII)
+TIGRFAM_MEMBER_RE = re.compile(r"TIGRFAM:(TIGR\d{5})(?:\.([1-9]\d*))?\Z", re.ASCII)
+INTERPRO_ACCESSION_RE = re.compile(r"IPR\d{6}\Z", re.ASCII)
+GO_TERM_RE = re.compile(r"GO:\d{7}\Z", re.ASCII)
+PFAM_ACCESSION_RE = re.compile(r"(PF\d{5})(?:\.([1-9]\d*))?\Z", re.ASCII)
+TIGRFAM_ACCESSION_RE = re.compile(r"(TIGR\d{5})(?:\.([1-9]\d*))?\Z", re.ASCII)
 
 
 @dataclass(frozen=True)

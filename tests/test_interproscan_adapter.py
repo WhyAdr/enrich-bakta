@@ -354,10 +354,12 @@ def test_late_legacy_comment_detection(tmp_path: Path) -> None:
 
 def test_mixed_legacy_and_marked_records(tmp_path: Path) -> None:
     """Verify that a multi-record file where one record has legacy comment without marker is rejected."""
+    from enrich_bakta_lib.core.merge_engine import TRANSLATION_EVIDENCE_MARKER
+
     rec1 = record_bytes(
         "REC1",
         DUMMY_QUERY,
-        comment_header="COMMENT     EnrichBakta:translation_evidence:validmarker",
+        comment_header=f"COMMENT     {TRANSLATION_EVIDENCE_MARKER}:validmarker",
     )
     rec2 = record_bytes(
         "REC2",
@@ -372,6 +374,84 @@ def test_mixed_legacy_and_marked_records(tmp_path: Path) -> None:
         MergeError, match=r"known legacy restoration provenance detected"
     ):
         plan_interproscan(base, faa_file, valid_tsv, version="5.59-91.0")
+
+
+def test_mixed_restored_record_and_unverified_legacy_record_rejected(
+    tmp_path: Path,
+) -> None:
+    """Verify a genuine partial ledger for record 1 does not authorize an unverified legacy record 2."""
+    from test_followthrough import inputs as ft_inputs
+
+    from enrich_bakta_lib.workflows.enrich import enrich
+    from enrich_bakta_lib.workflows.restore_translations import restore
+
+    base, faa, egg = ft_inputs(tmp_path, protein=b"MM")
+    base.write_bytes(
+        base.read_bytes()
+        + record_bytes(
+            "LEGACY",
+            DUMMY_QUERY,
+            comment_header="COMMENT     normalize_baktfold.py: restore Bakta provenance",
+        )
+    )
+    faa.write_bytes(faa.read_bytes() + faa_bytes(DUMMY_QUERY))
+    restored = tmp_path / "restored.gbff"
+    parent = tmp_path / "parent.json"
+    restore(
+        base, faa, egg, restored, manifest_path=parent, translation_policy="import-faa"
+    )
+
+    with pytest.raises(
+        MergeError, match=r"known legacy restoration provenance detected"
+    ):
+        enrich(
+            bakta_path=restored,
+            faa_path=faa,
+            interproscan_path=FIXTURES_DIR / "valid_ipr_go_pathways.tsv",
+            interproscan_version="5.59-91.0",
+            output_path=tmp_path / "out.gbff",
+            manifest_path=tmp_path / "out.json",
+            translation_evidence_manifest=parent,
+            allow_imported_translations=True,
+        )
+
+
+def test_legacy_comment_detector_ignores_feature_notes_and_negative_prose(
+    tmp_path: Path,
+) -> None:
+    """Verify legacy provenance detector inspects COMMENT blocks only and ignores unrelated mentions."""
+    from enrich_bakta_lib.core.merge_engine import (
+        has_legacy_restoration_comment,
+        record_has_legacy_restoration_comment,
+    )
+
+    # Mention inside a CDS /note must not trigger legacy detection
+    rec = record_bytes(
+        "REC1",
+        DUMMY_QUERY,
+        comment_header="COMMENT     Software: v1.12.0 (not post-processed)",
+    ).replace(
+        b'                     /product="test protein"\n',
+        b'                     /product="test protein"\n'
+        b'                     /note="normalize_baktfold.py: restore Bakta provenance"\n',
+    )
+    assert not has_legacy_restoration_comment(rec)
+    base = parse_genbank_bytes(rec, "base")
+    assert not record_has_legacy_restoration_comment(
+        base.data[base.records[0].start : base.records[0].features_offset]
+    )
+
+    faa_file = tmp_path / "test.faa"
+    faa_file.write_bytes(faa_bytes(DUMMY_QUERY))
+    plan = plan_interproscan(
+        base,
+        faa_file,
+        FIXTURES_DIR / "valid_ipr_go_pathways.tsv",
+        version="5.59-91.0",
+    )
+    assert plan.stats["faa_sha256"] is not None
+    assert len(plan.stats["faa_sha256"]) == 64
+    assert plan.context_report["metadata"]["faa_sha256"] == plan.stats["faa_sha256"]
 
 
 def test_faa_mutation_after_capture_rejected(tmp_path: Path) -> None:
@@ -646,3 +726,120 @@ def test_tsv_invalid_status_and_date(tmp_path: Path) -> None:
     )
     with pytest.raises(MergeError, match=r"invalid date"):
         stream_interproscan_tsv(bad_date_tsv, "ipr-go-pathways")
+
+    # Bad score (non-numeric / NaN / Inf)
+    for bad_score in ("not-a-score", "NaN", "inf", "-inf"):
+        bad_score_tsv = tmp_path / f"bad_score_{bad_score}.tsv"
+        bad_score_tsv.write_text(
+            f"{DUMMY_QUERY}\t{DUMMY_MD5}\t{DUMMY_LEN}\tPfam\tPF02566\tDesc\t1\t10\t{bad_score}\tT\t25-08-2026\t-\t-\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(MergeError, match=r"invalid score"):
+            stream_interproscan_tsv(bad_score_tsv, "ipr-go-pathways")
+
+
+def test_ascii_only_accession_and_coordinate_digits(tmp_path: Path) -> None:
+    """Verify non-ASCII Unicode digits are rejected in accessions, GO terms, and coordinates."""
+    from enrich_bakta_lib.sources.value_rules import (
+        validate_go_term,
+        validate_interpro_accession,
+        validate_pfam_accession,
+        validate_tigrfam_accession,
+    )
+
+    assert validate_interpro_accession("IPR٠١٢٣٤٥") is None
+    assert validate_go_term("GO:٠٠٠٥٥٢٤") is None
+    assert validate_pfam_accession("PF٠٠٠٠١") is None
+    assert validate_tigrfam_accession("TIGR٠٠٠٠١") is None
+
+    unicode_coord_tsv = tmp_path / "unicode_coord.tsv"
+    unicode_coord_tsv.write_text(
+        f"{DUMMY_QUERY}\t{DUMMY_MD5}\t{DUMMY_LEN}\tPfam\tPF02566\tDesc\t١\t10\t1.0\tT\t25-08-2026\t-\t-\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(MergeError, match=r"non-integer coordinates"):
+        stream_interproscan_tsv(unicode_coord_tsv, "ipr-go-pathways")
+
+
+def test_exact_1mib_line_ceiling_boundary_lf_and_crlf(tmp_path: Path) -> None:
+    """Verify exact 1 MiB line content succeeds with LF/CRLF while 1 MiB + 1 byte fails."""
+    prefix = f"{DUMMY_QUERY}\t{DUMMY_MD5}\t{DUMMY_LEN}\tPANTHER\tPTHR1\t"
+    suffix = "\t1\t10\t1.0\tT\t25-08-2026\t-\t-"
+    pad_len = MAX_RAW_LINE_BYTES - len(prefix) - len(suffix)
+    exact_line = (prefix + ("A" * pad_len) + suffix).encode("ascii")
+    assert len(exact_line) == MAX_RAW_LINE_BYTES
+
+    for name, ending in (("exact_lf.tsv", b"\n"), ("exact_crlf.tsv", b"\r\n")):
+        exact_file = tmp_path / name
+        exact_file.write_bytes(exact_line + ending)
+        _, hits, diag = stream_interproscan_tsv(exact_file, "ipr-go-pathways")
+        assert len(hits) == 1
+        assert diag["row_count"] == 1
+
+    over_file = tmp_path / "over_by_one.tsv"
+    over_file.write_bytes(
+        (prefix + ("A" * (pad_len + 1)) + suffix).encode("ascii") + b"\r\n"
+    )
+    with pytest.raises(MergeError, match=r"exceeds maximum allowed size of 1 MiB"):
+        stream_interproscan_tsv(over_file, "ipr-go-pathways")
+
+
+def test_match_evidence_digest_and_context_truncation_summaries(tmp_path: Path) -> None:
+    """Verify match_evidence_digest reacts to single-match changes while support_digest tracks annotations."""
+    base = parse_genbank_bytes(record_bytes("REC1", DUMMY_QUERY), "base")
+    faa_file = tmp_path / "sample.faa"
+    faa_file.write_bytes(faa_bytes(DUMMY_QUERY))
+
+    # Build TSV with 55 context-only signatures (>50 cap) and one Pfam match at 10..50
+    ctx_rows = [
+        f"{DUMMY_QUERY}\t{DUMMY_MD5}\t{DUMMY_LEN}\tGene3D\tG3D{i:05d}\tDesc\t1\t10\t1e-5\tT\t25-08-2026\t-\t-\n"
+        for i in range(55)
+    ]
+    row_a = (
+        f"{DUMMY_QUERY}\t{DUMMY_MD5}\t{DUMMY_LEN}\tPfam\tPF02566\tOsmC\t"
+        f"10\t50\t1e-10\tT\t25-08-2026\tIPR003718\tOsmC family\tGO:0006950\t"
+        f"MetaCyc: PWY-1|Reactome: R-1|Reactome: R-2\n"
+    )
+    row_b = (
+        f"{DUMMY_QUERY}\t{DUMMY_MD5}\t{DUMMY_LEN}\tPfam\tPF02566\tOsmC\t"
+        f"12\t55\t1e-10\tT\t25-08-2026\tIPR003718\tOsmC family\tGO:0006950\t"
+        f"MetaCyc: PWY-1|Reactome: R-1|Reactome: R-2\n"
+    )
+
+    tsv_a = tmp_path / "a.tsv"
+    tsv_a.write_text("".join(ctx_rows) + row_a, encoding="utf-8")
+    tsv_b = tmp_path / "b.tsv"
+    tsv_b.write_text("".join(ctx_rows) + row_b, encoding="utf-8")
+
+    plan_a = plan_interproscan(base, faa_file, tsv_a, version="5.59-91.0")
+    plan_b = plan_interproscan(base, faa_file, tsv_b, version="5.59-91.0")
+
+    # Unique annotation set did not change -> support_digest is identical
+    assert (
+        plan_a.context_report["metadata"]["support_digest"]
+        == plan_b.context_report["metadata"]["support_digest"]
+    )
+    # Supporting match coordinates changed -> match_evidence_digest MUST differ
+    assert (
+        plan_a.context_report["metadata"]["match_evidence_digest"]
+        != plan_b.context_report["metadata"]["match_evidence_digest"]
+    )
+
+    # Candidate evidence rows carry match summaries
+    pfam_a = next(r for r in plan_a.evidence_rows if r["field"] == "Pfam")
+    pfam_b = next(r for r in plan_b.evidence_rows if r["field"] == "Pfam")
+    assert pfam_a["occurrence_count"] == 1
+    assert pfam_a["location_samples"] == [[10, 50]]
+    assert pfam_b["location_samples"] == [[12, 55]]
+    assert pfam_a["match_evidence_digest"] != pfam_b["match_evidence_digest"]
+
+    # Context entry reports explicit truncation and per-database pathway counters
+    ctx_entry = plan_a.context_report["entries"][0]
+    assert len(ctx_entry["context_signatures"]) == 50
+    assert ctx_entry["context_signatures_total"] == 55
+    assert ctx_entry["context_signatures_truncated"] is True
+    assert ctx_entry["pathway_occurrences"] == 3
+    assert ctx_entry["pathway_occurrences_by_database"] == {
+        "MetaCyc": 1,
+        "Reactome": 2,
+    }

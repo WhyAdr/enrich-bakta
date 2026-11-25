@@ -11,8 +11,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from jsonschema import Draft202012Validator
+
 from enrich_bakta_lib.core.merge_engine import (
     MergeError,
+    load_translation_evidence,
+    parse_genbank_bytes,
     sha256_file,
 )
 from enrich_bakta_lib.sources.interproscan import merge as merge_interproscan
@@ -20,13 +24,26 @@ from enrich_bakta_lib.workflows.enrich import enrich
 
 DEFAULT_BASELINE_PATH = Path("docs/data/interproscan-scientific-baseline.json")
 
+EXPECTED_C14_IMPORTED_ORIGINS = (
+    "OJMJKD_002410",
+    "OJMJKD_010260",
+    "OJMJKD_012060",
+    "OJMJKD_020450",
+)
+
+
+def _validate_json_schema(schema_path: Path, payload: dict[str, Any]) -> None:
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    Draft202012Validator(schema).validate(payload)
+
+
 EXPECTED_C14 = {
     "output_sha256": "472b0bd60d3990dda6307c89de7153d2ab3fbfd9f9324180e8889cb1b47bc9e1",
     "insertions": 34080,
     "candidate_count": 37942,
     "emitted_candidate_count": 34079,
     "accepted_candidate_count": 37942,
-    "context_report_sha256": "b2b13b861e8a47973c3dce46f90998a3bcc6b0b7cde5f716b7c63f32e58dffb9",
+    "context_report_sha256": "f0ea27ddeae2989260059f968e8b1363abfff25c7bb364cc0c78f367db2666ce",
     "four_source_output_sha256": "fbf4bb5eae6a35b3405469c443ee36570f04254bf128f2b925c9020b7bbadb0e",
     "four_source_insertions": 74910,
 }
@@ -37,7 +54,7 @@ EXPECTED_SM = {
     "candidate_count": 37412,
     "emitted_candidate_count": 33540,
     "accepted_candidate_count": 37412,
-    "context_report_sha256": "a19bfb43da1e745c5564861432e2f55098934f63b7bad07854f665d9e83c019e",
+    "context_report_sha256": "aa6f77542f288efbe6ae16b588a84322818fd9fdeef6a712e152a473772739ae",
     "four_source_output_sha256": "69388307bedc377ce9acdf6ccce838e9af9eca38dff51f13ed9b76263c8d1035",
     "four_source_insertions": 73889,
 }
@@ -104,31 +121,29 @@ def run_checks(
     sm_expected = dict(EXPECTED_SM)
 
     effective_baseline = baseline_path or (root / DEFAULT_BASELINE_PATH)
-    if effective_baseline.is_file():
-        try:
-            base_json = json.loads(effective_baseline.read_text(encoding="utf-8"))
-            c14_exp = base_json.get("samples", {}).get("C14", {}).get("expected", {})
-            if "interproscan_only" in c14_exp:
-                c14_expected.update(c14_exp["interproscan_only"])
-            if "four_source" in c14_exp:
-                c14_expected["four_source_output_sha256"] = c14_exp["four_source"][
-                    "output_sha256"
-                ]
-                c14_expected["four_source_insertions"] = c14_exp["four_source"][
-                    "insertions"
-                ]
-            sm_exp = base_json.get("samples", {}).get("SM", {}).get("expected", {})
-            if "restored_interproscan_only" in sm_exp:
-                sm_expected.update(sm_exp["restored_interproscan_only"])
-            if "four_source" in sm_exp:
-                sm_expected["four_source_output_sha256"] = sm_exp["four_source"][
-                    "output_sha256"
-                ]
-                sm_expected["four_source_insertions"] = sm_exp["four_source"][
-                    "insertions"
-                ]
-        except Exception:
-            pass
+    if not effective_baseline.is_file():
+        raise FileNotFoundError(f"Scientific baseline not found: {effective_baseline}")
+    base_json = json.loads(effective_baseline.read_text(encoding="utf-8"))
+    c14_exp = base_json.get("samples", {}).get("C14", {}).get("expected", {})
+    if "interproscan_only" in c14_exp:
+        c14_expected.update(c14_exp["interproscan_only"])
+    if "four_source" in c14_exp:
+        c14_expected["four_source_output_sha256"] = c14_exp["four_source"][
+            "output_sha256"
+        ]
+        c14_expected["four_source_insertions"] = c14_exp["four_source"]["insertions"]
+    sm_exp = base_json.get("samples", {}).get("SM", {}).get("expected", {})
+    if "restored_interproscan_only" in sm_exp:
+        sm_expected.update(sm_exp["restored_interproscan_only"])
+    if "four_source" in sm_exp:
+        sm_expected["four_source_output_sha256"] = sm_exp["four_source"][
+            "output_sha256"
+        ]
+        sm_expected["four_source_insertions"] = sm_exp["four_source"]["insertions"]
+
+    manifest_schema = root / "schemas" / "merge-manifest.v2.schema.json"
+    ips_context_schema = root / "schemas" / "interproscan-context.v1.schema.json"
+    combined_context_schema = root / "schemas" / "context.v1.schema.json"
 
     # 1. C14 standalone enrichment
     def c14_check() -> dict[str, Any]:
@@ -161,6 +176,9 @@ def run_checks(
         assert stats["insertions"] == c14_expected["insertions"]
 
         man_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        _validate_json_schema(manifest_schema, man_data)
+        ctx_data = json.loads(context_path.read_text(encoding="utf-8"))
+        _validate_json_schema(ips_context_schema, ctx_data)
         for key in (
             "candidate_count",
             "emitted_candidate_count",
@@ -364,6 +382,9 @@ def run_checks(
         assert stats["insertions"] == sm_expected["insertions"]
 
         man_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        _validate_json_schema(manifest_schema, man_data)
+        ctx_data = json.loads(context_path.read_text(encoding="utf-8"))
+        _validate_json_schema(ips_context_schema, ctx_data)
         for key in (
             "candidate_count",
             "emitted_candidate_count",
@@ -382,6 +403,10 @@ def run_checks(
         for query in EXPECTED_SM_IMPORTED_ORIGINS:
             if te[query].get("origin") != "imported_faa":
                 raise AssertionError(f"Expected origin imported_faa for {query}")
+        reloaded = load_translation_evidence(
+            manifest_path, parse_genbank_bytes(out_gbff.read_bytes(), "SM output")
+        )
+        assert set(reloaded.keys()) == set(EXPECTED_SM_IMPORTED_ORIGINS)
 
         return {
             "output_sha256": stats["output_sha256"],
@@ -445,6 +470,15 @@ def run_checks(
         assert stats["self_check"] is True
         assert stats["output_sha256"] == sm_expected["output_sha256"]
         assert stats["insertions"] == sm_expected["insertions"]
+        man_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        _validate_json_schema(manifest_schema, man_data)
+        ctx_data = json.loads(context_path.read_text(encoding="utf-8"))
+        _validate_json_schema(ips_context_schema, ctx_data)
+        reloaded = load_translation_evidence(
+            manifest_path,
+            parse_genbank_bytes(out_gbff.read_bytes(), "SM standalone output"),
+        )
+        assert set(reloaded.keys()) == set(EXPECTED_SM_IMPORTED_ORIGINS)
         return {
             "output_sha256": stats["output_sha256"],
             "insertions": stats["insertions"],
@@ -550,6 +584,18 @@ def run_checks(
         assert stats["self_check"] is True
         assert stats["insertions"] == c14_expected["four_source_insertions"]
         assert stats["output_sha256"] == c14_expected["four_source_output_sha256"]
+        man_path = output / "C14-four-source.manifest.json"
+        ctx_path = output / "C14-four-source.context.json"
+        out_path = output / "C14-four-source.gbff"
+        man_data = json.loads(man_path.read_text(encoding="utf-8"))
+        _validate_json_schema(manifest_schema, man_data)
+        ctx_data = json.loads(ctx_path.read_text(encoding="utf-8"))
+        _validate_json_schema(combined_context_schema, ctx_data)
+        _validate_json_schema(ips_context_schema, ctx_data["interproscan"])
+        reloaded = load_translation_evidence(
+            man_path, parse_genbank_bytes(out_path.read_bytes(), "C14 four-source")
+        )
+        assert set(reloaded.keys()) == set(EXPECTED_C14_IMPORTED_ORIGINS)
         return {
             "output_sha256": stats["output_sha256"],
             "insertions": stats["insertions"],
@@ -612,6 +658,18 @@ def run_checks(
         assert stats["self_check"] is True
         assert stats["insertions"] == sm_expected["four_source_insertions"]
         assert stats["output_sha256"] == sm_expected["four_source_output_sha256"]
+        man_path = output / "SM-four-source.manifest.json"
+        ctx_path = output / "SM-four-source.context.json"
+        out_path = output / "SM-four-source.gbff"
+        man_data = json.loads(man_path.read_text(encoding="utf-8"))
+        _validate_json_schema(manifest_schema, man_data)
+        ctx_data = json.loads(ctx_path.read_text(encoding="utf-8"))
+        _validate_json_schema(combined_context_schema, ctx_data)
+        _validate_json_schema(ips_context_schema, ctx_data["interproscan"])
+        reloaded = load_translation_evidence(
+            man_path, parse_genbank_bytes(out_path.read_bytes(), "SM four-source")
+        )
+        assert set(reloaded.keys()) == set(EXPECTED_SM_IMPORTED_ORIGINS)
         return {
             "output_sha256": stats["output_sha256"],
             "insertions": stats["insertions"],

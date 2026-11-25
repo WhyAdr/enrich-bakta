@@ -240,9 +240,12 @@ python merge_interproscan_bakta.py \
 ```
 
 The InterProScan table must contain valid TSV records matching the verified
-producer profile (`5.59-91.0`). Single-pass streaming parses each row enforcing
-a 1 MiB line ceiling, captures the input SHA-256, tracks AntiFam quality control
-hits, and validates layout profiles:
+producer profile (`5.59-91.0`). Because native InterProScan TSV files contain no
+authenticating version header, `--interproscan-version` is required as an
+explicit caller assertion and recorded as such in provenance metadata.
+Single-pass streaming parses each row enforcing a 1 MiB line ceiling, captures
+the input SHA-256, tracks AntiFam quality control hits, and validates layout
+profiles:
 - `ipr-go-pathways` (default, 15 columns, with GO and Reactome/MetaCyc pathways)
 - `ipr-go` (14 columns, with GO annotations)
 - `ipr-pathways` (14 columns, with pathway annotations)
@@ -266,11 +269,16 @@ Feature provenance records `/inference="protein motif:InterProScan:VERSION"` on 
 CDS that receives new qualifiers.
 
 When `--context-report PATH` is supplied, biological pathways (Reactome, MetaCyc,
-KEGG), signature matches, and AntiFam quality control hits are preserved in a
-deterministic sidecar (`enrich-bakta.interproscan-context.v1`). In unified runs
-combining both eggNOG and InterProScan context, this sidecar is aggregated under
-envelope `enrich-bakta.context.v1`, and its SHA-256 is recorded directly in the
-merge manifest metadata.
+KEGG), bounded signature matches with explicit truncation counters, per-query
+pathway database counts, distinct annotation-set (`support_digest`) and
+match-evidence (`match_evidence_digest`) digests, and AntiFam quality control
+hits are preserved in a deterministic sidecar
+(`enrich-bakta.interproscan-context.v1`). In unified runs combining both eggNOG
+and InterProScan context, this sidecar is aggregated under envelope
+`enrich-bakta.context.v1`, and its SHA-256 is recorded directly in the merge
+manifest metadata. Candidate projections also retain compact match summaries
+(`occurrence_count`, up to 5 `location_samples`, truncation flags, and
+`match_evidence_digest`).
 
 ## Unified multi-source enrichment
 
@@ -344,14 +352,15 @@ git diff --check
 The local biological inventory is documented in
 [`docs/data/README.md`](docs/data/README.md) and checked with
 `python tools/validate_dataset_manifest.py docs/data/MANIFEST.json`. The
-full 77-artifact local inventory remains a provenance record, while the
-reviewed 33-artifact C14/SM/BK71A corpus is listed in
+full 86-artifact local inventory remains a provenance record, while the
+reviewed 42-artifact C14/SM/BK71A corpus is listed in
 [`docs/data/PUBLISHED-MANIFEST.json`](docs/data/PUBLISHED-MANIFEST.json) and
 published with Git LFS under CC BY 4.0. Every published artifact retains its
 `historical_unverified` status: that label describes the historical analytical
 provenance, not a claim that the biological annotations were independently
-validated. BK71A is structural-only because no pristine Bakta FAA/evidence
-inputs are included.
+validated. BK71A includes historical InterProScan exports for parser/audit
+inspection, but remains blocked for functional enrichment because no pristine
+Bakta FAA or bound translation-restoration ledger is present.
 
 For a clean clone with the curated bytes, install Git LFS and run
 `git lfs pull`, then validate the published manifest:

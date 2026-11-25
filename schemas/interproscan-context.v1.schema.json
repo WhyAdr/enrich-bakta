@@ -28,6 +28,7 @@
         "pathway_counters",
         "pathway_digest",
         "support_digest",
+        "match_evidence_digest",
         "qc_flags"
       ],
       "properties": {
@@ -80,6 +81,7 @@
         },
         "pathway_digest": {"$ref": "#/$defs/sha256"},
         "support_digest": {"$ref": "#/$defs/sha256"},
+        "match_evidence_digest": {"$ref": "#/$defs/sha256"},
         "qc_flags": {
           "type": "object",
           "properties": {
@@ -93,7 +95,14 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["query_id", "context_signatures", "pathway_occurrences"],
+        "required": [
+          "query_id",
+          "context_signatures",
+          "context_signatures_total",
+          "context_signatures_truncated",
+          "pathway_occurrences",
+          "pathway_occurrences_by_database"
+        ],
         "properties": {
           "query_id": {"type": "string", "minLength": 1},
           "context_signatures": {
@@ -101,7 +110,13 @@
             "maxItems": 50,
             "items": {"type": "string"}
           },
-          "pathway_occurrences": {"type": "integer", "minimum": 0}
+          "context_signatures_total": {"type": "integer", "minimum": 0},
+          "context_signatures_truncated": {"type": "boolean"},
+          "pathway_occurrences": {"type": "integer", "minimum": 0},
+          "pathway_occurrences_by_database": {
+            "type": "object",
+            "additionalProperties": {"type": "integer", "minimum": 0}
+          }
         }
       }
     }

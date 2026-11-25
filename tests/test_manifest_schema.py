@@ -265,3 +265,65 @@ def test_schema_negative_rejects_corrupted_interproscan_context(tmp_path: Path) 
     corrupted3["metadata"]["interproscan_sha256"] = "invalid_hash"
     with pytest.raises(ValidationError):
         validator.validate(corrupted3)
+
+    # 4. Invalid match_evidence_digest in metadata
+    corrupted4 = json.loads(json.dumps(valid_data))
+    corrupted4["metadata"]["match_evidence_digest"] = "not-a-sha256"
+    with pytest.raises(ValidationError):
+        validator.validate(corrupted4)
+
+    # 5. Missing truncation metadata in entry
+    corrupted5 = json.loads(json.dumps(valid_data))
+    corrupted5["entries"][0].pop("context_signatures_truncated")
+    with pytest.raises(ValidationError):
+        validator.validate(corrupted5)
+
+
+def test_combined_context_schema_validation_and_negatives(tmp_path: Path) -> None:
+    base = write(tmp_path / "base.gbff", record_bytes("TEST", "T_0001"))
+    faa = write(tmp_path / "base.faa", b">T_0001\nMK\n")
+    egg = write(
+        tmp_path / "egg.tsv",
+        eggnog_bytes(
+            "T_0001\tseed\t1e-4\t10\tC\tabc\t-\t1.2.3.4\tK00001\t-\thhhhhhhhhhhhh"
+        ),
+    )
+    mk_md5 = hashlib.md5(b"MK").hexdigest()
+    ips = write(
+        tmp_path / "ips.tsv",
+        f"T_0001\t{mk_md5}\t2\tPfam\tPF00001\tdesc\t1\t2\t1.0\tT\t25-08-2026\tIPR000001\tFamily\tGO:0005524\tReactome: R-HSA-1\n".encode(
+            "utf-8"
+        ),
+    )
+    out_manifest = tmp_path / "combined_manifest.json"
+    out_context = tmp_path / "combined_context.json"
+
+    enrich(
+        bakta_path=base,
+        output_path=tmp_path / "combined.gbff",
+        faa_path=faa,
+        eggnog_path=egg,
+        interproscan_path=ips,
+        interproscan_version="5.59-91.0",
+        manifest_path=out_manifest,
+        context_report_path=out_context,
+    )
+
+    _assert_valid(out_manifest)
+    ctx_data = json.loads(out_context.read_text(encoding="utf-8"))
+    context_validator = _context_validator()
+    context_validator.validate(ctx_data)
+    _ips_context_validator().validate(ctx_data["interproscan"])
+    assert ctx_data["metadata"]["sources"] == ["eggNOG", "InterProScan"]
+
+    # Missing required sources in combined envelope fails schema validation
+    bad_no_sources = json.loads(json.dumps(ctx_data))
+    bad_no_sources["metadata"].pop("sources")
+    with pytest.raises(ValidationError):
+        context_validator.validate(bad_no_sources)
+
+    # Missing interproscan payload fails schema validation
+    bad_no_ips = json.loads(json.dumps(ctx_data))
+    bad_no_ips.pop("interproscan")
+    with pytest.raises(ValidationError):
+        context_validator.validate(bad_no_ips)

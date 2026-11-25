@@ -4,23 +4,52 @@
   "title": "enrich-bakta combined context report v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema", "metadata"],
+  "required": ["schema", "metadata", "eggnog", "interproscan"],
   "properties": {
     "schema": {
       "const": "enrich-bakta.context.v1"
     },
     "metadata": {
       "type": "object",
+      "additionalProperties": true,
       "required": ["operation", "sources"],
       "properties": {
-        "operation": {"type": "string"},
+        "operation": {"type": "string", "minLength": 1},
         "sources": {
           "type": "array",
-          "items": {"type": "string"}
-        }
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {"enum": ["eggNOG", "InterProScan"]}
+        },
+        "tool_version": {"type": "string", "minLength": 1},
+        "base_sha256": {"$ref": "#/$defs/sha256"},
+        "output_sha256": {"$ref": "#/$defs/sha256"},
+        "insertions": {"type": "integer", "minimum": 0},
+        "records": {"type": "integer", "minimum": 1}
       }
     },
-    "eggnog": {"type": "object"},
-    "interproscan": {"type": "object"}
+    "eggnog": {
+      "type": "object",
+      "required": ["schema", "metadata"],
+      "properties": {
+        "schema": {"const": "enrich-bakta.eggnog-context.v1"},
+        "metadata": {"type": "object"}
+      }
+    },
+    "interproscan": {
+      "type": "object",
+      "required": ["schema", "metadata", "entries"],
+      "properties": {
+        "schema": {"const": "enrich-bakta.interproscan-context.v1"},
+        "metadata": {"type": "object"},
+        "entries": {"type": "array"}
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
   }
 }

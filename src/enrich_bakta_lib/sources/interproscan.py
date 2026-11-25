@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import re
 import sys
 from collections import defaultdict
@@ -61,9 +62,28 @@ INTERPROSCAN_COMMENT_MARKER = "##enrich-bakta:interproscan:v1##"
 MAX_RAW_LINE_BYTES = 1024 * 1024  # 1 MiB line ceiling
 MAX_AGGREGATED_QUERIES = 200_000
 MAX_AGGREGATED_CANDIDATES = 500_000
+MAX_LOCATION_SAMPLES = 5
+MAX_CONTEXT_SIGNATURES = 50
+MAX_PATHWAY_DB_KEYS = 200
 
-MD5_HEX_RE = re.compile(r"^[0-9a-fA-F]{32}\Z")
-DATE_FORMAT_RE = re.compile(r"^(?:\d{2}-\d{2}-\d{4}|\d{4}-\d{2}-\d{2}|-|\?)\Z")
+MD5_HEX_RE = re.compile(r"^[0-9a-fA-F]{32}\Z", re.ASCII)
+DATE_FORMAT_RE = re.compile(
+    r"^(?:\d{2}-\d{2}-\d{4}|\d{4}-\d{2}-\d{2}|-|\?)\Z", re.ASCII
+)
+ASCII_INT_RE = re.compile(r"^\d+\Z", re.ASCII)
+
+
+def _is_valid_score(value: str) -> bool:
+    """Validate native InterProScan score token ('-' or finite ASCII float)."""
+    if value == "-":
+        return True
+    if not value or not value.isascii():
+        return False
+    try:
+        parsed = float(value)
+    except ValueError:
+        return False
+    return math.isfinite(parsed)
 
 
 @dataclass
@@ -88,6 +108,7 @@ class InterProScanHit:
     row_number: int
     occurrence_count: int = 1
     location_samples: tuple[tuple[int, int], ...] = ()
+    location_samples_truncated: bool = False
 
 
 @dataclass(frozen=True)
@@ -248,13 +269,16 @@ def stream_interproscan_tsv(
 
     hasher = hashlib.sha256()
     pathway_hasher = hashlib.sha256()
-    hits_by_key: dict[tuple[str, str, str], InterProScanHit] = {}
+    hits_by_key: dict[tuple[str, str, str, str | None], InterProScanHit] = {}
     query_metadata: dict[str, tuple[str, int]] = {}
     pathway_counters: dict[str, Any] = {
         "total_occurrences": 0,
         "by_database": defaultdict(int),
     }
     pathway_occurrences_by_query: dict[str, int] = defaultdict(int)
+    pathway_occurrences_by_query_db: dict[str, dict[str, int]] = defaultdict(
+        lambda: defaultdict(int)
+    )
     anti_fam_hits: list[dict[str, Any]] = []
     integrated_count = 0
     unintegrated_count = 0
@@ -262,12 +286,16 @@ def stream_interproscan_tsv(
 
     with tsv_path.open("rb") as stream:
         while True:
-            line_bytes = stream.readline(MAX_RAW_LINE_BYTES + 1)
+            line_bytes = stream.readline(MAX_RAW_LINE_BYTES + 2)
             if not line_bytes:
                 break
-            if len(line_bytes) > MAX_RAW_LINE_BYTES and not (
-                line_bytes.endswith(b"\n") or line_bytes.endswith(b"\r")
-            ):
+            if line_bytes.endswith(b"\r\n"):
+                raw_content_len = len(line_bytes) - 2
+            elif line_bytes.endswith((b"\n", b"\r")):
+                raw_content_len = len(line_bytes) - 1
+            else:
+                raw_content_len = len(line_bytes)
+            if raw_content_len > MAX_RAW_LINE_BYTES:
                 raise MergeError(
                     f"InterProScan TSV line {row_number + 1} exceeds maximum allowed size of 1 MiB"
                 )
@@ -327,12 +355,12 @@ def stream_interproscan_tsv(
                 )
             md5 = raw_md5.lower()
 
-            try:
-                length = int(fields[2].strip())
-            except ValueError as exc:
+            raw_len = fields[2].strip()
+            if not ASCII_INT_RE.fullmatch(raw_len):
                 raise MergeError(
                     f"InterProScan TSV line {row_number} has non-integer length {fields[2]!r}"
-                ) from exc
+                )
+            length = int(raw_len)
             if length <= 0:
                 raise MergeError(
                     f"InterProScan TSV line {row_number} has non-positive length {length}"
@@ -351,13 +379,16 @@ def stream_interproscan_tsv(
                 )
             sig_desc = fields[5].strip()
 
-            try:
-                start = int(fields[6].strip())
-                end = int(fields[7].strip())
-            except ValueError as exc:
+            raw_start = fields[6].strip()
+            raw_end = fields[7].strip()
+            if not ASCII_INT_RE.fullmatch(raw_start) or not ASCII_INT_RE.fullmatch(
+                raw_end
+            ):
                 raise MergeError(
                     f"InterProScan TSV line {row_number} has non-integer coordinates"
-                ) from exc
+                )
+            start = int(raw_start)
+            end = int(raw_end)
 
             if not (1 <= start <= end <= length):
                 raise MergeError(
@@ -368,6 +399,11 @@ def stream_interproscan_tsv(
             score = fields[8].strip()
             status = fields[9].strip()
             date = fields[10].strip()
+
+            if not _is_valid_score(score):
+                raise MergeError(
+                    f"InterProScan TSV line {row_number} has invalid score {score!r}"
+                )
 
             if status not in {"T", "F", "?", "-"}:
                 raise MergeError(
@@ -402,12 +438,17 @@ def stream_interproscan_tsv(
                     token.partition(":")[0].strip() if ":" in token else "unspecified"
                 )
                 if (
-                    len(pathway_counters["by_database"]) < 200
+                    len(pathway_counters["by_database"]) < MAX_PATHWAY_DB_KEYS
                     or db_name in pathway_counters["by_database"]
                 ):
                     pathway_counters["by_database"][db_name] += 1
                 else:
                     pathway_counters["by_database"]["other"] += 1
+                q_dbs = pathway_occurrences_by_query_db[query_id]
+                if len(q_dbs) < MAX_PATHWAY_DB_KEYS or db_name in q_dbs:
+                    q_dbs[db_name] += 1
+                else:
+                    q_dbs["other"] += 1
                 pathway_hasher.update(f"{query_id}\t{token}\n".encode("utf-8"))
 
             # QC flags (AntiFam)
@@ -425,14 +466,16 @@ def stream_interproscan_tsv(
                         }
                     )
 
-            hit_key = (query_id, analysis, sig_acc)
+            hit_key = (query_id, analysis, sig_acc, ipr_acc)
             if hit_key in hits_by_key:
                 existing_hit = hits_by_key[hit_key]
                 existing_hit.occurrence_count += 1
-                if len(existing_hit.location_samples) < 5:
+                if len(existing_hit.location_samples) < MAX_LOCATION_SAMPLES:
                     existing_hit.location_samples = existing_hit.location_samples + (
                         (start, end),
                     )
+                else:
+                    existing_hit.location_samples_truncated = True
                 if go_terms:
                     existing_gos = set(existing_hit.go_terms)
                     new_gos = [g for g in go_terms if g not in existing_gos]
@@ -469,6 +512,7 @@ def stream_interproscan_tsv(
                     row_number=row_number,
                     occurrence_count=1,
                     location_samples=((start, end),),
+                    location_samples_truncated=False,
                 )
 
     hits = list(hits_by_key.values())
@@ -484,6 +528,10 @@ def stream_interproscan_tsv(
         "query_metadata": query_metadata,
         "pathway_counters": pathway_counters,
         "pathway_occurrences_by_query": dict(pathway_occurrences_by_query),
+        "pathway_occurrences_by_query_db": {
+            q: dict(sorted(dbs.items()))
+            for q, dbs in pathway_occurrences_by_query_db.items()
+        },
         "pathway_digest": pathway_digest,
         "anti_fam_hits": anti_fam_hits,
     }
@@ -645,46 +693,74 @@ def plan_interproscan(
     evidence_rows: list[dict[str, Any]] = []
     order = 0
     support_hasher = hashlib.sha256()
+    match_evidence_hasher = hashlib.sha256()
 
     new_qualifier_features: set[str] = set()
     per_query_context: dict[str, dict[str, Any]] = {}
+    unique_candidate_total = 0
 
     for query in queried_ids:
         feature = cds[query]
         f_uid = feature_uid(feature)
         query_hits = hits_by_query.get(query, [])
 
-        # Proposals: (field, qualifier, normalized_value, raw_value, role, evidence_class, first_row)
-        proposals: list[tuple[str, str, str, str, str, str, int]] = []
+        # Aggregated proposals per (field, qualifier, normalized_value)
+        unique_proposals: dict[
+            tuple[str, str, str],
+            dict[str, Any],
+        ] = {}
         context_sigs: list[str] = []
+
+        def _record_proposal(
+            field: str,
+            qualifier: str,
+            normalized_val: str,
+            raw_val: str,
+            role: str,
+            ev_class: str,
+            hit: InterProScanHit,
+        ) -> None:
+            key = (field, qualifier, normalized_val)
+            entry = unique_proposals.get(key)
+            if entry is None:
+                unique_proposals[key] = {
+                    "field": field,
+                    "qualifier": qualifier,
+                    "normalized_value": normalized_val,
+                    "raw_value": raw_val,
+                    "role": role,
+                    "evidence_class": ev_class,
+                    "first_row": hit.row_number,
+                    "hits": [hit],
+                }
+            else:
+                if hit.row_number < entry["first_row"]:
+                    entry["first_row"] = hit.row_number
+                entry["hits"].append(hit)
 
         for hit in query_hits:
             # 1. InterPro accession
             if hit.interpro_accession:
-                proposals.append(
-                    (
-                        "InterPro",
-                        "db_xref",
-                        f"InterPro:{hit.interpro_accession}",
-                        hit.interpro_accession,
-                        "functional_proposal",
-                        "InterPro",
-                        hit.row_number,
-                    )
+                _record_proposal(
+                    "InterPro",
+                    "db_xref",
+                    f"InterPro:{hit.interpro_accession}",
+                    hit.interpro_accession,
+                    "functional_proposal",
+                    "InterPro",
+                    hit,
                 )
 
             # 2. GO terms
             for go in hit.go_terms:
-                proposals.append(
-                    (
-                        "GO",
-                        "db_xref",
-                        go,
-                        go,
-                        "functional_proposal",
-                        "GO",
-                        hit.row_number,
-                    )
+                _record_proposal(
+                    "GO",
+                    "db_xref",
+                    go,
+                    go,
+                    "functional_proposal",
+                    "GO",
+                    hit,
                 )
 
             # 3. Member signatures (Pfam, TIGRFAM)
@@ -697,16 +773,14 @@ def plan_interproscan(
                             f"invalid Pfam signature accession {hit.signature_accession!r}"
                         )
                     canonical, _ = res_pfam
-                    proposals.append(
-                        (
-                            "Pfam",
-                            "note",
-                            f"PFAM:{canonical}",
-                            hit.signature_accession,
-                            "substantive_evidence",
-                            "member:Pfam",
-                            hit.row_number,
-                        )
+                    _record_proposal(
+                        "Pfam",
+                        "note",
+                        f"PFAM:{canonical}",
+                        hit.signature_accession,
+                        "substantive_evidence",
+                        "member:Pfam",
+                        hit,
                     )
                 else:
                     context_sigs.append(f"{hit.analysis}:{hit.signature_accession}")
@@ -719,43 +793,75 @@ def plan_interproscan(
                             f"invalid TIGRFAM signature accession {hit.signature_accession!r}"
                         )
                     canonical, _ = res_tigr
-                    proposals.append(
-                        (
-                            "TIGRFAM",
-                            "note",
-                            f"TIGRFAM:{canonical}",
-                            hit.signature_accession,
-                            "substantive_evidence",
-                            "member:TIGRFAM",
-                            hit.row_number,
-                        )
+                    _record_proposal(
+                        "TIGRFAM",
+                        "note",
+                        f"TIGRFAM:{canonical}",
+                        hit.signature_accession,
+                        "substantive_evidence",
+                        "member:TIGRFAM",
+                        hit,
                     )
                 else:
                     context_sigs.append(f"{hit.analysis}:{hit.signature_accession}")
             else:
                 context_sigs.append(f"{hit.analysis}:{hit.signature_accession}")
 
-        # Unique proposals per (field, qualifier, normalized_value)
-        unique_proposals: dict[
-            tuple[str, str, str], tuple[str, str, str, str, str, str, int]
-        ] = {}
-        for prop in proposals:
-            key = (prop[0], prop[1], prop[2])
-            if key not in unique_proposals:
-                unique_proposals[key] = prop
+        unique_candidate_total += len(unique_proposals)
+        if unique_candidate_total > MAX_AGGREGATED_CANDIDATES:
+            raise MergeError(
+                f"InterProScan planning exceeded maximum unique semantic candidate limit ({MAX_AGGREGATED_CANDIDATES})"
+            )
 
-        for (
-            field,
-            qualifier,
-            normalized_val,
-            raw_val,
-            role,
-            ev_class,
-            first_row,
-        ) in sorted(unique_proposals.values(), key=lambda p: (p[1], p[2])):
-            # Support digest accumulation
+        for prop in sorted(
+            unique_proposals.values(),
+            key=lambda p: (p["qualifier"], p["normalized_value"]),
+        ):
+            field = prop["field"]
+            qualifier = prop["qualifier"]
+            normalized_val = prop["normalized_value"]
+            raw_val = prop["raw_value"]
+            role = prop["role"]
+            ev_class = prop["evidence_class"]
+            first_row = prop["first_row"]
+            contrib_hits: list[InterProScanHit] = prop["hits"]
+
+            # Bounded match-evidence summary and deterministic digest
+            occurrence_count = sum(h.occurrence_count for h in contrib_hits)
+            location_samples: list[list[int]] = []
+            location_samples_truncated = False
+            cand_match_hasher = hashlib.sha256()
+            for h in sorted(
+                contrib_hits,
+                key=lambda item: (
+                    item.analysis,
+                    item.signature_accession,
+                    item.row_number,
+                ),
+            ):
+                if h.location_samples_truncated:
+                    location_samples_truncated = True
+                for s, e in h.location_samples:
+                    if len(location_samples) < MAX_LOCATION_SAMPLES:
+                        location_samples.append([s, e])
+                    else:
+                        location_samples_truncated = True
+                loc_str = ",".join(f"{s}-{e}" for s, e in h.location_samples)
+                cand_match_hasher.update(
+                    f"{query}\t{h.analysis}\t{h.signature_accession}\t{h.row_number}\t{h.occurrence_count}\t{loc_str}\n".encode(
+                        "utf-8"
+                    )
+                )
+            candidate_match_digest = cand_match_hasher.hexdigest()
+
+            # Support digest (annotation set) vs match evidence digest
             support_hasher.update(
                 f"{query}\t{field}\t{normalized_val}\n".encode("utf-8")
+            )
+            match_evidence_hasher.update(
+                f"{query}\t{field}\t{normalized_val}\t{candidate_match_digest}\n".encode(
+                    "utf-8"
+                )
             )
 
             # Check existing base annotation
@@ -817,6 +923,10 @@ def plan_interproscan(
                     "emitted_qualifiers": emitted_val,
                     "support_witness": witness,
                     "row_number": first_row,
+                    "occurrence_count": occurrence_count,
+                    "location_samples": location_samples,
+                    "location_samples_truncated": location_samples_truncated,
+                    "match_evidence_digest": candidate_match_digest,
                     "source": "InterProScan",
                     "reason": f"{field} match {'already present' if existing else 'planned for insertion'}",
                 }
@@ -825,11 +935,19 @@ def plan_interproscan(
         pathway_occurrences = tsv_diag.get("pathway_occurrences_by_query", {}).get(
             query, 0
         )
-        if context_sigs or pathway_occurrences > 0:
+        pathway_by_db = tsv_diag.get("pathway_occurrences_by_query_db", {}).get(
+            query, {}
+        )
+        unique_context_sigs = sorted(set(context_sigs))
+        if unique_context_sigs or pathway_occurrences > 0:
             per_query_context[query] = {
                 "query_id": query,
-                "context_signatures": sorted(set(context_sigs))[:50],
+                "context_signatures": unique_context_sigs[:MAX_CONTEXT_SIGNATURES],
+                "context_signatures_total": len(unique_context_sigs),
+                "context_signatures_truncated": len(unique_context_sigs)
+                > MAX_CONTEXT_SIGNATURES,
                 "pathway_occurrences": pathway_occurrences,
+                "pathway_occurrences_by_database": pathway_by_db,
             }
 
     # Add feature provenance inference for CDSs with new insertions
@@ -905,6 +1023,7 @@ def plan_interproscan(
                 order += 1
 
     support_digest = support_hasher.hexdigest()
+    match_evidence_digest = match_evidence_hasher.hexdigest()
 
     stats = {
         "rows": tsv_diag["row_count"],
@@ -913,7 +1032,7 @@ def plan_interproscan(
         "matched_queries": len(queried_ids),
         "planned_insertions": len(insertions),
         "interproscan_sha256": source_sha256,
-        "faa_sha256": faa_hash,
+        "faa_sha256": actual_faa_hash,
     }
 
     context_report = {
@@ -923,7 +1042,7 @@ def plan_interproscan(
             "interproscan_version": version,
             "interproscan_tsv_layout": layout,
             "interproscan_sha256": source_sha256,
-            "faa_sha256": faa_hash,
+            "faa_sha256": actual_faa_hash,
             "member_dbs": list(member_dbs),
             "rows": tsv_diag["row_count"],
             "unintegrated_rows": tsv_diag["unintegrated_count"],
@@ -939,6 +1058,7 @@ def plan_interproscan(
             "pathway_counters": tsv_diag["pathway_counters"],
             "pathway_digest": tsv_diag["pathway_digest"],
             "support_digest": support_digest,
+            "match_evidence_digest": match_evidence_digest,
             "qc_flags": {
                 "anti_fam": tsv_diag["anti_fam_hits"],
             },
@@ -1032,6 +1152,7 @@ def merge(
         "interproscan_version": plan.version,
         "interproscan_tsv_layout": plan.layout,
         "member_dbs": list(plan.member_dbs),
+        "interproscan_member_dbs": list(plan.member_dbs),
         "translation_evidence_manifest": (
             str(translation_evidence_manifest) if translation_evidence_manifest else ""
         ),

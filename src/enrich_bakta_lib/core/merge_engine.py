@@ -744,14 +744,31 @@ LEGACY_RESTORATION_COMMENT_RE = re.compile(
 )
 
 
+def _extract_comment_blocks(data: bytes) -> bytes:
+    """Extract only GenBank COMMENT header sections, excluding other headers and features."""
+    blocks: list[bytes] = []
+    in_comment = False
+    for line in data.splitlines(keepends=True):
+        if line.startswith(b"COMMENT"):
+            in_comment = True
+            blocks.append(line)
+        elif in_comment and line.startswith(b"            "):
+            blocks.append(line)
+        else:
+            in_comment = False
+    return b"".join(blocks)
+
+
 def record_has_legacy_restoration_comment(header_bytes: bytes) -> bool:
     """Detect known legacy normalize_baktfold.py restoration comment in a record header."""
-    return bool(LEGACY_RESTORATION_COMMENT_RE.search(header_bytes))
+    return bool(
+        LEGACY_RESTORATION_COMMENT_RE.search(_extract_comment_blocks(header_bytes))
+    )
 
 
 def has_legacy_restoration_comment(data: bytes) -> bool:
     """Detect known legacy normalize_baktfold.py restoration comment across data."""
-    return bool(LEGACY_RESTORATION_COMMENT_RE.search(data))
+    return bool(LEGACY_RESTORATION_COMMENT_RE.search(_extract_comment_blocks(data)))
 
 
 def load_translation_evidence(

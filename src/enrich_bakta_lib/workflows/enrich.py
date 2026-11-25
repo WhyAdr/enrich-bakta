@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Canonical one-pass Baktfold, KofamScan, and eggNOG Bakta enrichment CLI."""
+"""Canonical one-pass Baktfold, KofamScan, eggNOG, and InterProScan Bakta enrichment CLI."""
 
 from __future__ import annotations
 
@@ -331,6 +331,7 @@ def enrich(
                 "schema": "enrich-bakta.context.v1",
                 "metadata": {
                     "operation": "unified-enrichment",
+                    "sources": ["eggNOG", "InterProScan"],
                 },
                 "eggnog": eggnog_context,
                 "interproscan": interproscan_context,
