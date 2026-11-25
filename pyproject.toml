@@ -34,6 +34,7 @@ enrich-bakta-kofam = "enrich_bakta_lib.sources.kofam:main"
 enrich-bakta-eggnog = "enrich_bakta_lib.sources.eggnog:main"
 enrich-bakta-interproscan = "enrich_bakta_lib.sources.interproscan:main"
 enrich-bakta-restore-translations = "enrich_bakta_lib.workflows.restore_translations:main"
+enrich-bakta-report = "enrich_bakta_lib.workflows.summary_report:main"
 
 [tool.setuptools]
 py-modules = [

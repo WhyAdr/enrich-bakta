@@ -52,6 +52,7 @@ def enrich(
     add_feature_provenance: bool = True,
     merge_timestamp: str | None = None,
     context_report_path: Path | None = None,
+    summary_report_path: Path | None = None,
     clean_gene_suffix: bool = False,
     translation_evidence_manifest: Path | None = None,
     allow_imported_translations: bool = False,
@@ -143,6 +144,7 @@ def enrich(
         output_path=output_path,
         manifest_path=manifest_path,
         context_report_path=context_report_path,
+        summary_report_path=summary_report_path,
         gene_conflict_policy=gene_conflict_policy,
         reconcile=True,
         include_clean_gene_suffix_policy=True,
@@ -212,6 +214,11 @@ def main() -> int:
         help="write higher-order eggNOG/InterProScan context as a deterministic JSON sidecar",
     )
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--summary-report",
+        type=Path,
+        help="write an enrichment summary as Markdown or HTML",
+    )
     args = parser.parse_args()
     for label, path in (
         ("Bakta", args.bakta),
@@ -250,6 +257,7 @@ def main() -> int:
             add_feature_provenance=not args.no_feature_provenance,
             merge_timestamp=args.merge_timestamp,
             context_report_path=args.context_report,
+            summary_report_path=args.summary_report,
             translation_evidence_manifest=args.translation_evidence_manifest,
             allow_imported_translations=args.allow_imported_translations,
             baktfold_invalid_ec_policy=args.baktfold_invalid_ec_policy,

@@ -63,29 +63,26 @@ def atomic_write(path: Path, data: bytes) -> None:
             raise
 
 
+def manifest_payload(
+    metadata: dict[str, Any], rows: list[dict[str, Any]]
+) -> dict[str, Any]:
+    return {
+        "schema": "enrich-bakta.merge-manifest.v2",
+        "metadata": metadata,
+        "entries": [
+            row for row in rows if row.get("entry_type") != "candidate_decision"
+        ],
+        "decisions": [
+            row for row in rows if row.get("entry_type") == "candidate_decision"
+        ],
+    }
+
+
 def manifest_bytes(
     path: Path, metadata: dict[str, Any], rows: list[dict[str, Any]]
 ) -> bytes:
     if path.suffix.lower() == ".json":
-        decisions = [
-            row for row in rows if row.get("entry_type") == "candidate_decision"
-        ]
-        entries = [row for row in rows if row.get("entry_type") != "candidate_decision"]
-        payload = (
-            json.dumps(
-                {
-                    "schema": "enrich-bakta.merge-manifest.v2",
-                    "metadata": metadata,
-                    "entries": entries,
-                    "decisions": decisions,
-                },
-                indent=2,
-                sort_keys=True,
-                ensure_ascii=False,
-            ).encode("utf-8")
-            + b"\n"
-        )
-        return payload
+        return json_sidecar_bytes(manifest_payload(metadata, rows))
     preferred_columns = [
         "entry_type",
         "query_id",
@@ -216,6 +213,7 @@ def finalize_merge(
     extra_allowed_qualifiers: Iterable[str] = (),
     sidecar_path: Path | None = None,
     sidecar_payload: dict[str, Any] | None = None,
+    summary_report_path: Path | None = None,
 ) -> dict[str, Any]:
     if base_doc is not None and base_doc.data != base_data:
         raise MergeError("pre-parsed base_doc bytes do not match base_data snapshot")
@@ -232,7 +230,11 @@ def finalize_merge(
         manifest_path, [*inputs, output_path, *([sidecar_path] if sidecar_path else [])]
     ):
         raise MergeError("manifest path must differ from inputs, output, and sidecar")
-    if sidecar_path is None and sidecar_payload is not None:
+    if (
+        sidecar_path is None
+        and sidecar_payload is not None
+        and summary_report_path is None
+    ):
         raise MergeError("sidecar payload requires a sidecar path")
     if sidecar_path is not None and sidecar_payload is None:
         raise MergeError("sidecar path requires a sidecar payload")
@@ -241,6 +243,26 @@ def finalize_merge(
         [*inputs, output_path, *([manifest_path] if manifest_path else [])],
     ):
         raise MergeError("sidecar path must differ from inputs, output, and manifest")
+    if summary_report_path is not None:
+        from enrich_bakta_lib.workflows.summary_report import (
+            resolve_report_format,
+            summary_report_bytes,
+        )
+
+        preflight_artifact_paths(
+            (
+                path
+                for path in (
+                    output_path,
+                    manifest_path,
+                    sidecar_path,
+                    summary_report_path,
+                )
+                if path is not None
+            ),
+            inputs,
+        )
+        report_format = resolve_report_format(summary_report_path)
     if sha256_file(base_path) != sha256_bytes(base_data):
         raise MergeError(
             "base file changed on disk since planning; re-run the merge before writing"
@@ -283,7 +305,7 @@ def finalize_merge(
         output_sha256,
     )
     sidecar_bytes: bytes | None = None
-    if sidecar_payload is not None:
+    if sidecar_path is not None and sidecar_payload is not None:
         sidecar_metadata = sidecar_payload.get("metadata")
         if isinstance(sidecar_metadata, dict):
             sidecar_metadata.update(
@@ -298,7 +320,8 @@ def finalize_merge(
         sidecar_bytes = json_sidecar_bytes(sidecar_payload)
         metadata["context_report_sha256"] = sha256_bytes(sidecar_bytes)
     artifacts = [(output_path, merged)]
-    if manifest_path is not None:
+    summary_data: bytes | None = None
+    if manifest_path is not None or summary_report_path is not None:
         rows = insertion_rows(applied)
         if evidence_rows is not None:
             rows = [*_bind_translation_evidence(evidence_rows, output_sha256), *rows]
@@ -319,9 +342,18 @@ def finalize_merge(
                         "translation_evidence": evidence,
                     }
                 )
-        artifacts.append((manifest_path, manifest_bytes(manifest_path, metadata, rows)))
+        if manifest_path is not None:
+            artifacts.append(
+                (manifest_path, manifest_bytes(manifest_path, metadata, rows))
+            )
+        if summary_report_path is not None:
+            summary_data = summary_report_bytes(
+                manifest_payload(metadata, rows), sidecar_payload, report_format
+            )
     if sidecar_path is not None and sidecar_bytes is not None:
         artifacts.append((sidecar_path, sidecar_bytes))
+    if summary_report_path is not None and summary_data is not None:
+        artifacts.append((summary_report_path, summary_data))
     stage_artifacts(artifacts, inputs)
     return {
         "output_sha256": metadata["output_sha256"],

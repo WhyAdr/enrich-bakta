@@ -124,6 +124,7 @@ def execute_merge_pipeline(
     output_path: Path,
     manifest_path: Path | None = None,
     context_report_path: Path | None = None,
+    summary_report_path: Path | None = None,
     gene_conflict_policy: str = "skip",
     reconcile: bool = True,
     include_clean_gene_suffix_policy: bool = False,
@@ -207,7 +208,7 @@ def execute_merge_pipeline(
 
     sidecar_payload = (
         assemble_context_sidecar(plans, operation=operation)
-        if context_report_path is not None
+        if context_report_path is not None or summary_report_path is not None
         else None
     )
     final = finalize_merge(
@@ -222,6 +223,7 @@ def execute_merge_pipeline(
         metadata=metadata,
         sidecar_path=context_report_path,
         sidecar_payload=sidecar_payload,
+        summary_report_path=summary_report_path,
     )
     return PipelineResult(
         final=final, plans=tuple(plans), candidate_counts=candidate_counts
