@@ -39,6 +39,7 @@ from enrich_bakta_lib.core.merge_engine import (
     validate_faa_gbff as _validate_faa_gbff,
 )
 from enrich_bakta_lib.sources.baktfold import plan_baktfold_additions
+from enrich_bakta_lib.sources.base import MergeContext, SourcePlan
 from enrich_bakta_lib.sources.value_rules import structured_note_tokens
 
 KO_RE = re.compile(r"K\d{5}\Z")
@@ -136,7 +137,7 @@ def parse_kofam_table(data: bytes) -> list[KofamHit]:
 
 def validate_faa_gbff(
     base: RawDocument,
-    proteins: dict[str, str],
+    proteins: Mapping[str, str],
     hits: list[KofamHit],
     *,
     translation_evidence: Mapping[str, TranslationEvidence] | None = None,
@@ -169,7 +170,7 @@ def _existing_kos(feature: RawFeature) -> set[str]:
 
 def plan_kofam_additions(
     base: RawDocument,
-    proteins: dict[str, str],
+    proteins: Mapping[str, str],
     hits: list[KofamHit],
     *,
     kofam_data: bytes,
@@ -347,6 +348,47 @@ def plan_kofam_additions(
         "planned_insertions": len(insertions),
     }
     return insertions, evidence_rows, stats
+
+
+@dataclass(frozen=True)
+class KofamAdapter:
+    """Adapter wrapping KofamScan table parsing and insertion planning."""
+
+    kofam_path: Path
+    kofamscan_version: str | None = None
+    source_id: str = "KofamScan"
+
+    def plan(self, ctx: MergeContext, *, starting_order: int = 0) -> SourcePlan:
+        if ctx.faa_path is None:
+            raise MergeError("--faa is required with --kofamscan")
+        kofam_data = read_input_bytes(self.kofam_path, "Kofam")
+        hits = parse_kofam_table(kofam_data)
+        insertions, evidence_rows, stats = plan_kofam_additions(
+            ctx.base_doc,
+            ctx.proteins or {},
+            hits,
+            kofam_data=kofam_data,
+            faa_data=ctx.faa_data,
+            kofamscan_version=self.kofamscan_version,
+            add_comment_note=ctx.add_comment_note,
+            add_feature_provenance=ctx.add_feature_provenance,
+            merge_timestamp=ctx.merge_timestamp,
+            starting_order=starting_order,
+            translation_evidence=ctx.translation_evidence,
+            allow_imported_translations=ctx.allow_imported_translations,
+        )
+        return SourcePlan(
+            source_id=self.source_id,
+            source_sha256=stats["kofam_sha256"],
+            insertions=insertions,
+            evidence_rows=evidence_rows,
+            stats=stats,
+            manifest_metadata={
+                "kofam_sha256": stats["kofam_sha256"],
+                "kofamscan_version": stats["kofamscan_version"],
+            },
+            input_paths=(self.kofam_path,),
+        )
 
 
 def merge(

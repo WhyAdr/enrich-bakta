@@ -39,6 +39,7 @@ from enrich_bakta_lib.core.merge_engine import (
     record_has_legacy_restoration_comment,
     sha256_bytes,
 )
+from enrich_bakta_lib.sources.base import MergeContext, SourcePlan
 from enrich_bakta_lib.sources.value_rules import (
     find_member_note_witness,
     validate_go_term,
@@ -553,6 +554,7 @@ def plan_interproscan(
     faa_data: bytes | None = None,
     faa_hash: str | None = None,
     proteins: Mapping[str, str] | None = None,
+    starting_order: int = 0,
 ) -> InterProScanPlan:
     """Plan candidate insertions and evidence rows from InterProScan TSV."""
     if not version:
@@ -690,7 +692,7 @@ def plan_interproscan(
 
     insertions: list[Insertion] = []
     evidence_rows: list[dict[str, Any]] = []
-    order = 0
+    order = starting_order
     support_hasher = hashlib.sha256()
     match_evidence_hasher = hashlib.sha256()
 
@@ -1075,6 +1077,58 @@ def plan_interproscan(
         layout=layout,
         member_dbs=member_dbs,
     )
+
+
+@dataclass(frozen=True)
+class InterProScanAdapter:
+    """Adapter wrapping InterProScan TSV validation and candidate planning."""
+
+    interproscan_path: Path
+    version: str
+    layout: str = DEFAULT_TSV_LAYOUT
+    member_dbs: str | Sequence[str] = DEFAULT_MEMBER_DBS
+    source_id: str = "InterProScan"
+
+    def plan(self, ctx: MergeContext, *, starting_order: int = 0) -> SourcePlan:
+        if ctx.faa_path is None:
+            raise MergeError("--faa is required with --interproscan")
+        # Preserve 0.4.1 insertion order=0 so multi-source GBFF splice ordering
+        # remains byte-identical across baselines.
+        _ = starting_order
+        parsed_dbs = parse_member_dbs(self.member_dbs)
+        ips_plan = plan_interproscan(
+            ctx.base_doc,
+            ctx.faa_path,
+            self.interproscan_path,
+            version=self.version,
+            layout=self.layout,
+            member_dbs=parsed_dbs,
+            add_comment_note=ctx.add_comment_note,
+            add_feature_provenance=ctx.add_feature_provenance,
+            merge_timestamp=ctx.merge_timestamp,
+            translation_evidence=ctx.translation_evidence,
+            allow_imported_translations=ctx.allow_imported_translations,
+            faa_data=ctx.faa_data,
+            faa_hash=ctx.faa_sha256,
+            proteins=ctx.proteins,
+            starting_order=0,
+        )
+        return SourcePlan(
+            source_id=self.source_id,
+            source_sha256=ips_plan.source_sha256,
+            insertions=ips_plan.insertions,
+            evidence_rows=ips_plan.evidence_rows,
+            stats=ips_plan.stats,
+            manifest_metadata={
+                "interproscan_sha256": ips_plan.source_sha256,
+                "interproscan_version": ips_plan.version,
+                "interproscan_tsv_layout": ips_plan.layout,
+                "interproscan_member_dbs": list(ips_plan.member_dbs),
+            },
+            context_report=ips_plan.context_report,
+            context_key="interproscan",
+            input_paths=(self.interproscan_path,),
+        )
 
 
 def merge(

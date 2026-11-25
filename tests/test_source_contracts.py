@@ -146,3 +146,74 @@ def test_value_validation_retains_raw_normalized_status_and_reason() -> None:
 )
 def test_structured_note_tokens_require_complete_affirmative_tokens(note, expected):
     assert structured_note_tokens(note) == expected
+
+
+def test_source_adapters_produce_normalized_source_plans(tmp_path: Path) -> None:
+    import hashlib
+
+    from test_merge_pipeline import kofam_bytes, record_bytes, write
+
+    from enrich_bakta_lib.core.merge_engine import (
+        parse_faa,
+        parse_genbank_bytes,
+        sha256_bytes,
+    )
+    from enrich_bakta_lib.sources.baktfold import BaktfoldAdapter
+    from enrich_bakta_lib.sources.base import MergeContext, SourcePlan
+    from enrich_bakta_lib.sources.eggnog import EggnogAdapter
+    from enrich_bakta_lib.sources.interproscan import InterProScanAdapter
+    from enrich_bakta_lib.sources.kofam import KofamAdapter
+
+    base_data = record_bytes("TEST", "T_0001")
+    base_path = write(tmp_path / "base.gbff", base_data)
+    faa_data = b">T_0001\nMK\n"
+    faa_path = write(tmp_path / "base.faa", faa_data)
+    fold_path = write(
+        tmp_path / "fold.gbff",
+        record_bytes("TEST", "T_0001", gene="abc", db_xrefs=("pdb:1ABC",)),
+    )
+    ko_path = write(tmp_path / "ko.txt", kofam_bytes("* T_0001 K00001 1 2 3e-4 alpha"))
+    egg_path = write(tmp_path / "egg.tsv", eggnog_bytes(ROW))
+    mk_md5 = hashlib.md5(b"MK").hexdigest()
+    ips_path = write(
+        tmp_path / "ips.tsv",
+        f"T_0001\t{mk_md5}\t2\tPfam\tPF00001\tdesc\t1\t2\t1.0\tT\t25-08-2026\t-\t-\n".encode(
+            "utf-8"
+        ),
+    )
+
+    ctx = MergeContext(
+        bakta_path=base_path,
+        base_data=base_data,
+        base_doc=parse_genbank_bytes(base_data, "Bakta input"),
+        base_sha256=sha256_bytes(base_data),
+        faa_path=faa_path,
+        faa_data=faa_data,
+        faa_sha256=sha256_bytes(faa_data),
+        proteins=parse_faa(faa_data),
+    )
+    adapters = [
+        BaktfoldAdapter(fold_path),
+        KofamAdapter(ko_path),
+        EggnogAdapter(egg_path),
+        InterProScanAdapter(ips_path, version="5.59-91.0"),
+    ]
+    plans = [
+        adapter.plan(ctx, starting_order=index * 10)
+        for index, adapter in enumerate(adapters)
+    ]
+    assert all(isinstance(plan, SourcePlan) for plan in plans)
+    assert [plan.source_id for plan in plans] == [
+        "Baktfold",
+        "KofamScan",
+        "eggNOG",
+        "InterProScan",
+    ]
+    assert [plan.context_key for plan in plans] == [
+        None,
+        None,
+        "eggnog",
+        "interproscan",
+    ]
+    assert plans[2].context_report is not None
+    assert plans[3].context_report is not None

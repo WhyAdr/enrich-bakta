@@ -37,6 +37,7 @@ from enrich_bakta_lib.core.merge_engine import (
     sha256_bytes,
     validate_faa_gbff,
 )
+from enrich_bakta_lib.sources.base import MergeContext, SourcePlan
 from enrich_bakta_lib.sources.eggnog_schema import (
     CONFIDENCE_FIELD_INDEX,
     CONFIDENCE_ORDER_PREFIX,
@@ -673,7 +674,7 @@ def _collect_context(
 
 def plan_eggnog_additions(
     base: RawDocument,
-    proteins: dict[str, str],
+    proteins: Mapping[str, str],
     table: EggnogTable,
     *,
     eggnog_data: bytes,
@@ -1090,6 +1091,64 @@ def plan_eggnog_additions(
         "entries": context_entries,
     }
     return EggnogPlan(insertions, evidence, stats, context_report)
+
+
+@dataclass(frozen=True)
+class EggnogAdapter:
+    """Adapter wrapping eggNOG table parsing and insertion planning."""
+
+    eggnog_path: Path
+    eggnog_version: str | None = None
+    eggnog_schema: str | None = None
+    min_confidence: str = "low"
+    source_id: str = "eggNOG"
+
+    def plan(self, ctx: MergeContext, *, starting_order: int = 0) -> SourcePlan:
+        if ctx.faa_path is None:
+            raise MergeError("--faa is required with --eggnog")
+        eggnog_data = read_input_bytes(self.eggnog_path, "eggNOG")
+        table = parse_eggnog_path(
+            self.eggnog_path,
+            expected_version=self.eggnog_version,
+            data=eggnog_data,
+            schema_id=self.eggnog_schema,
+        )
+        plan = plan_eggnog_additions(
+            ctx.base_doc,
+            ctx.proteins or {},
+            table,
+            eggnog_data=eggnog_data,
+            faa_data=ctx.faa_data,
+            min_confidence=self.min_confidence,
+            clean_gene_suffix=ctx.clean_gene_suffix,
+            add_comment_note=ctx.add_comment_note,
+            add_feature_provenance=ctx.add_feature_provenance,
+            merge_timestamp=ctx.merge_timestamp,
+            starting_order=starting_order,
+            translation_evidence=ctx.translation_evidence,
+            allow_imported_translations=ctx.allow_imported_translations,
+        )
+        stats = plan.stats
+        return SourcePlan(
+            source_id=self.source_id,
+            source_sha256=stats["eggnog_sha256"],
+            insertions=plan.insertions,
+            evidence_rows=plan.evidence_rows,
+            stats=stats,
+            manifest_metadata={
+                "eggnog_sha256": stats["eggnog_sha256"],
+                "eggnog_version": stats["eggnog_version"],
+                "eggnog_schema": stats["eggnog_schema"],
+                "schema_selection_source": stats["schema_selection_source"],
+                "min_eggnog_confidence": self.min_confidence,
+                "confidence_field_order": stats["confidence_field_order"],
+                "confidence_contract_source": stats["confidence_contract_source"],
+                "clean_gene_suffix": ctx.clean_gene_suffix,
+            },
+            context_report=plan.context_report,
+            context_key="eggnog",
+            input_paths=(self.eggnog_path,),
+        )
 
 
 def merge(

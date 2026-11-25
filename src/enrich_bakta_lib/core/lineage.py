@@ -64,7 +64,7 @@ def has_legacy_restoration_comment(data: bytes) -> bool:
 
 def validate_faa_gbff(
     base: RawDocument,
-    proteins: dict[str, str],
+    proteins: Mapping[str, str],
     query_ids: Iterable[str],
     *,
     source_name: str,

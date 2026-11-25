@@ -15,6 +15,7 @@ import json
 import re
 import sys
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +44,7 @@ from enrich_bakta_lib.core.merge_engine import (
     strict_parity_check,
     validate_faa_gbff,
 )
+from enrich_bakta_lib.sources.base import MergeContext, SourcePlan
 from enrich_bakta_lib.sources.value_rules import (
     structural_xref,
     validate_ec_value,
@@ -526,6 +528,63 @@ def plan_baktfold_additions(
     stats["planned_insertions"] = len(insertions)
     stats["invalid_ec_value_count"] = len(stats["invalid_ec_values"])
     return insertions, candidate_rows, stats
+
+
+@dataclass(frozen=True)
+class BaktfoldAdapter:
+    """Adapter wrapping Baktfold parity validation and insertion planning."""
+
+    baktfold_path: Path
+    invalid_ec_policy: str = "reject"
+    source_id: str = "Baktfold"
+
+    def plan(self, ctx: MergeContext, *, starting_order: int = 0) -> SourcePlan:
+        baktfold_data = read_input_bytes(self.baktfold_path, "Baktfold")
+        source = parse_genbank_bytes(baktfold_data, "Baktfold input")
+        insertions, candidate_rows, stats = plan_baktfold_additions(
+            ctx.base_doc,
+            source,
+            baktfold_data=baktfold_data,
+            add_feature_provenance=ctx.add_feature_provenance,
+            add_comment_note=ctx.add_comment_note,
+            merge_timestamp=ctx.merge_timestamp,
+            starting_order=starting_order,
+            invalid_ec_policy=self.invalid_ec_policy,
+            translation_evidence=ctx.translation_evidence,
+            allow_imported_translations=ctx.allow_imported_translations,
+        )
+        return SourcePlan(
+            source_id=self.source_id,
+            source_sha256=stats["baktfold_sha256"],
+            insertions=insertions,
+            evidence_rows=[*candidate_rows, *stats.get("invalid_ec_values", [])],
+            stats=stats,
+            manifest_metadata={
+                "baktfold_sha256": stats["baktfold_sha256"],
+                "baktfold_parity": stats["parity"],
+                "baktfold_version": stats["baktfold_version"],
+                "baktfold_version_detected": stats["baktfold_version_detected"],
+                "baktfold_translation_mismatch_policy": stats[
+                    "translation_mismatch_policy"
+                ],
+                "baktfold_translation_mismatch_loci": stats[
+                    "translation_mismatch_loci"
+                ],
+                "baktfold_translation_mismatch_suppressed_features": stats[
+                    "translation_mismatch_suppressed_features"
+                ],
+                "baktfold_base_pair_name_conflicts": stats["base_pair_name_conflicts"],
+                "baktfold_source_pair_name_conflicts": stats[
+                    "source_pair_name_conflicts"
+                ],
+                "baktfold_invalid_ec_policy": self.invalid_ec_policy,
+                "baktfold_invalid_ec_values": stats.get("invalid_ec_values", []),
+                "baktfold_invalid_ec_value_count": stats.get(
+                    "invalid_ec_value_count", 0
+                ),
+            },
+            input_paths=(self.baktfold_path,),
+        )
 
 
 def graft(
