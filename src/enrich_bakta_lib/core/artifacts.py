@@ -9,10 +9,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from enrich_bakta_lib.core.genbank import (
-    parse_genbank_bytes,
-    validate_genbank_semantics,
-)
+from enrich_bakta_lib.core.genbank import parse_genbank_bytes
 from enrich_bakta_lib.core.lineage import (
     _bind_metadata_translation_evidence,
     _bind_translation_evidence,
@@ -27,6 +24,7 @@ from enrich_bakta_lib.core.types import (
     TOOL_VERSION,
     Insertion,
     MergeError,
+    RawDocument,
     sha256_bytes,
     sha256_file,
 )
@@ -208,6 +206,7 @@ def finalize_merge(
     *,
     base_path: Path,
     base_data: bytes,
+    base_doc: RawDocument | None = None,
     output_path: Path,
     other_inputs: Iterable[Path],
     insertions: list[Insertion],
@@ -218,6 +217,8 @@ def finalize_merge(
     sidecar_path: Path | None = None,
     sidecar_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if base_doc is not None and base_doc.data != base_data:
+        raise MergeError("pre-parsed base_doc bytes do not match base_data snapshot")
     if has_translation_evidence_marker(base_data) and not metadata.get(
         "translation_evidence"
     ):
@@ -247,11 +248,13 @@ def finalize_merge(
     merged, applied = apply_insertions(
         base_data, insertions, extra_allowed_qualifiers=extra_allowed_qualifiers
     )
-    validate_genbank_semantics(merged, "merged output")
     parsed_output = parse_genbank_bytes(merged, "merged output")
-    verify_insertion_semantics(
-        parse_genbank_bytes(base_data, "Bakta input"), parsed_output, applied
+    parsed_base = (
+        base_doc
+        if base_doc is not None
+        else parse_genbank_bytes(base_data, "Bakta input")
     )
+    verify_insertion_semantics(parsed_base, parsed_output, applied)
     if evidence_rows is not None:
         candidate_rows = [
             row
@@ -264,7 +267,7 @@ def finalize_merge(
             validate_candidate_ledger(
                 candidate_rows,
                 insertions,
-                base=parse_genbank_bytes(base_data, "Bakta input"),
+                base=parsed_base,
                 output=parsed_output,
             )
     output_sha256 = sha256_bytes(merged)

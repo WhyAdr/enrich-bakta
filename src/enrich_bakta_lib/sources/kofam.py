@@ -34,7 +34,6 @@ from enrich_bakta_lib.core.merge_engine import (
     read_input_bytes,
     reconcile_insertions,
     sha256_bytes,
-    validate_genbank_semantics,
 )
 from enrich_bakta_lib.core.merge_engine import (
     validate_faa_gbff as _validate_faa_gbff,
@@ -369,7 +368,6 @@ def merge(
     base_data = read_input_bytes(bakta_path, "Bakta")
     faa_data = read_input_bytes(faa_path, "FAA")
     kofam_data = read_input_bytes(kofam_path, "Kofam")
-    validate_genbank_semantics(base_data, "Bakta input")
     base = parse_genbank_bytes(base_data, "Bakta input")
     if (
         has_translation_evidence_marker(base_data)
@@ -394,7 +392,6 @@ def merge(
         other_inputs.append(translation_evidence_manifest)
     if baktfold_path is not None:
         baktfold_data = read_input_bytes(baktfold_path, "Baktfold")
-        validate_genbank_semantics(baktfold_data, "Baktfold input")
         baktfold = parse_genbank_bytes(baktfold_data, "Baktfold input")
         (
             baktfold_insertions,
@@ -456,6 +453,7 @@ def merge(
     final = finalize_merge(
         base_path=bakta_path,
         base_data=base_data,
+        base_doc=base,
         output_path=output_path,
         other_inputs=other_inputs,
         insertions=insertions,

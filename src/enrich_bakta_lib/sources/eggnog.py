@@ -36,7 +36,6 @@ from enrich_bakta_lib.core.merge_engine import (
     read_input_bytes,
     sha256_bytes,
     validate_faa_gbff,
-    validate_genbank_semantics,
 )
 from enrich_bakta_lib.sources.eggnog_schema import (
     CONFIDENCE_FIELD_INDEX,
@@ -1116,7 +1115,6 @@ def merge(
         read_input_bytes(faa_path, "FAA"),
         read_input_bytes(eggnog_path, "eggNOG"),
     )
-    validate_genbank_semantics(base_data, "Bakta input")
     base = parse_genbank_bytes(base_data, "Bakta input")
     if (
         has_translation_evidence_marker(base_data)
@@ -1168,6 +1166,7 @@ def merge(
     final = finalize_merge(
         base_path=bakta_path,
         base_data=base_data,
+        base_doc=base,
         output_path=output_path,
         other_inputs=[
             faa_path,

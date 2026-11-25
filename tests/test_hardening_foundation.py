@@ -93,3 +93,39 @@ def test_second_promotion_failure_has_documented_boundary(
     assert first.read_bytes() == b"new first"
     assert second.read_bytes() == b"old second"
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_single_merge_parses_genbank_exactly_twice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from test_merge_pipeline import eggnog_bytes
+
+    from enrich_bakta_lib.core import genbank as core_genbank
+    from enrich_bakta_lib.sources.eggnog import merge as merge_eggnog
+
+    base = write(tmp_path / "base.gbff", record_bytes("TEST", "T_0001"))
+    faa = write(tmp_path / "base.faa", b">T_0001\nMK\n")
+    egg = write(
+        tmp_path / "egg.tsv",
+        eggnog_bytes(
+            "T_0001\tseed\t1e-4\t10\tC\tabc\t-\t1.2.3.4\tK00001\t-\thhhhhhhhhhhhh"
+        ),
+    )
+    genbank_calls = 0
+    original_parse = core_genbank.SeqIO.parse
+
+    def counting_parse(handle, fmt, *args, **kwargs):
+        nonlocal genbank_calls
+        if fmt == "genbank":
+            genbank_calls += 1
+        return original_parse(handle, fmt, *args, **kwargs)
+
+    monkeypatch.setattr(core_genbank.SeqIO, "parse", counting_parse)
+    merge_eggnog(
+        base,
+        faa,
+        egg,
+        tmp_path / "out.gbff",
+        manifest_path=tmp_path / "manifest.json",
+    )
+    assert genbank_calls == 2

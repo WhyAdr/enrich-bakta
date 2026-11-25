@@ -38,7 +38,6 @@ from enrich_bakta_lib.core.merge_engine import (
     reconcile_insertions,
     record_has_legacy_restoration_comment,
     sha256_bytes,
-    validate_genbank_semantics,
 )
 from enrich_bakta_lib.sources.value_rules import (
     find_member_note_witness,
@@ -1101,7 +1100,6 @@ def merge(
             "InterProScan input requires an explicit interproscan_version assertion"
         )
     base_data = read_input_bytes(bakta_path, "Bakta")
-    validate_genbank_semantics(base_data, "Bakta input")
     base = parse_genbank_bytes(base_data, "Bakta input")
 
     member_dbs = parse_member_dbs(interproscan_member_dbs)
@@ -1179,6 +1177,7 @@ def merge(
     return finalize_merge(
         base_path=bakta_path,
         base_data=base_data,
+        base_doc=base,
         output_path=output_path,
         other_inputs=other_inputs,
         insertions=reconciled,

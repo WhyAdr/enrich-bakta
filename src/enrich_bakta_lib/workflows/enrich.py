@@ -25,7 +25,6 @@ from enrich_bakta_lib.core.merge_engine import (
     read_input_bytes,
     reconcile_insertions,
     sha256_bytes,
-    validate_genbank_semantics,
 )
 from enrich_bakta_lib.sources.baktfold import plan_baktfold_additions
 from enrich_bakta_lib.sources.eggnog import parse_eggnog_path, plan_eggnog_additions
@@ -95,7 +94,6 @@ def enrich(
     ):
         raise MergeError("--context-report requires --eggnog or --interproscan")
     base_data = read_input_bytes(bakta_path, "Bakta")
-    validate_genbank_semantics(base_data, "Bakta input")
     base = parse_genbank_bytes(base_data, "Bakta input")
     if (
         has_translation_evidence_marker(base_data)
@@ -141,7 +139,6 @@ def enrich(
         other_inputs.append(translation_evidence_manifest)
     if baktfold_path:
         data = read_input_bytes(baktfold_path, "Baktfold")
-        validate_genbank_semantics(data, "Baktfold input")
         source = parse_genbank_bytes(data, "Baktfold input")
         planned, baktfold_candidates, stats = plan_baktfold_additions(
             base,
@@ -343,6 +340,7 @@ def enrich(
     return finalize_merge(
         base_path=bakta_path,
         base_data=base_data,
+        base_doc=base,
         output_path=output_path,
         other_inputs=other_inputs,
         insertions=insertions,

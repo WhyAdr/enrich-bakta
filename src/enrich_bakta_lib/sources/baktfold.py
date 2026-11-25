@@ -42,7 +42,6 @@ from enrich_bakta_lib.core.merge_engine import (
     sha256_bytes,
     strict_parity_check,
     validate_faa_gbff,
-    validate_genbank_semantics,
 )
 from enrich_bakta_lib.sources.value_rules import (
     structural_xref,
@@ -544,8 +543,6 @@ def graft(
 ) -> dict[str, Any]:
     bakta_data = read_input_bytes(bakta_path, "Bakta")
     baktfold_data = read_input_bytes(baktfold_path, "Baktfold")
-    validate_genbank_semantics(bakta_data, "Bakta input")
-    validate_genbank_semantics(baktfold_data, "Baktfold input")
     base = parse_genbank_bytes(bakta_data, "Bakta input")
     translation_evidence = (
         load_translation_evidence(translation_evidence_manifest, base)
@@ -576,6 +573,7 @@ def graft(
     final = finalize_merge(
         base_path=bakta_path,
         base_data=bakta_data,
+        base_doc=base,
         output_path=output_path,
         other_inputs=[
             baktfold_path,

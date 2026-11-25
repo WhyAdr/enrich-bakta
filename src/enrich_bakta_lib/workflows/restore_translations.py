@@ -34,7 +34,6 @@ from enrich_bakta_lib.core.merge_engine import (
     read_input_bytes,
     sha256_bytes,
     validate_faa_gbff,
-    validate_genbank_semantics,
 )
 from enrich_bakta_lib.sources.eggnog import EggnogTable, parse_eggnog_path
 
@@ -301,7 +300,7 @@ def restore(
     translation_policy: str = "validated-only",
     translation_evidence_manifest: Path | None = None,
 ) -> dict[str, Any]:
-    _base, base_data, _faa_data, table, insertions, evidence_rows, stats = (
+    base, base_data, _faa_data, table, insertions, evidence_rows, stats = (
         prepare_restoration(
             bakta_path,
             faa_path,
@@ -315,6 +314,7 @@ def restore(
     final = finalize_merge(
         base_path=bakta_path,
         base_data=base_data,
+        base_doc=base,
         output_path=output_path,
         other_inputs=[
             faa_path,
@@ -373,14 +373,13 @@ def prepare_restoration(
     base_data = read_input_bytes(bakta_path, "Bakta")
     faa_data = read_input_bytes(faa_path, "FAA")
     eggnog_data = read_input_bytes(eggnog_path, "eggNOG")
-    validate_genbank_semantics(base_data, "Bakta input")
+    base = parse_genbank_bytes(base_data, "Bakta input")
     table = parse_eggnog_path(
         eggnog_path,
         expected_version=eggnog_version,
         data=eggnog_data,
         schema_id=eggnog_schema,
     )
-    base = parse_genbank_bytes(base_data, "Bakta input")
     if (
         has_translation_evidence_marker(base_data)
         and translation_evidence_manifest is None
