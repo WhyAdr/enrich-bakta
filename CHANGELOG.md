@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Added `enrich-bakta-export` for one deterministic TSV row per CDS, with
+  optional byte-bound manifest and context evidence.
+
 ## 0.5.0 - 2026-11-25
 
 - Added inline Markdown and self-contained HTML merge summaries and the offline

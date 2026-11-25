@@ -391,6 +391,32 @@ each artifact's expected hash, previous hash, and replacement status. If a
 run stops during replacement, compare the destination hashes to the journal
 before retrying.
 
+## Per-CDS TSV export
+
+```bash
+enrich-bakta-export --gbff ENRICHED.gbff --manifest ENRICHED.manifest.json \
+  --context-report ENRICHED.context.json --output ENRICHED.cds.tsv
+```
+
+The TSV has one row per CDS in input order, including pseudogene CDS features.
+It records the GBFF SHA-256, zero-based record and feature indexes, locus tags,
+feature UID, position, product, gene symbols, EC, KO, GO, InterPro, Pfam,
+TIGRFAM, and inference evidence. Read it with a quote-aware TSV reader.
+Multivalued cells contain JSON arrays, and `translation_present` records
+whether the CDS carries a translation.
+
+The optional JSON inputs must match the GBFF output hash. When both are
+supplied, the manifest must also link to the exact context file. The manifest
+adds accepted decisions by feature UID and verified restoration lineage.
+`accepted_decisions` is JSON `null` without a manifest and an empty array when
+the supplied manifest has no accepted decisions for the CDS. An origin of
+`not_recorded` means the bound manifest has no restoration entry for that CDS.
+
+InterProScan context provides AntiFam calls for uniquely mapped loci.
+`not_reported` means the sidecar has an entry for the locus and lists no alert
+for it. Sidecar coverage varies, and `unavailable` and `ambiguous_locus`
+identify rows without a conclusive context mapping.
+
 ## Validation
 
 ```bash
