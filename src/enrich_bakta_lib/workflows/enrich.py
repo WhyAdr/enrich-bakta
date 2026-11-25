@@ -52,6 +52,7 @@ def enrich(
     add_feature_provenance: bool = True,
     merge_timestamp: str | None = None,
     context_report_path: Path | None = None,
+    promotion_journal_path: Path | None = None,
     summary_report_path: Path | None = None,
     clean_gene_suffix: bool = False,
     translation_evidence_manifest: Path | None = None,
@@ -144,6 +145,7 @@ def enrich(
         output_path=output_path,
         manifest_path=manifest_path,
         context_report_path=context_report_path,
+        promotion_journal_path=promotion_journal_path,
         summary_report_path=summary_report_path,
         gene_conflict_policy=gene_conflict_policy,
         reconcile=True,
@@ -213,6 +215,11 @@ def main() -> int:
         type=Path,
         help="write higher-order eggNOG/InterProScan context as a deterministic JSON sidecar",
     )
+    parser.add_argument(
+        "--promotion-journal",
+        type=Path,
+        help="record expected hashes and sequential artifact promotion progress in JSON",
+    )
     parser.add_argument("--json", action="store_true")
     parser.add_argument(
         "--summary-report",
@@ -257,6 +264,7 @@ def main() -> int:
             add_feature_provenance=not args.no_feature_provenance,
             merge_timestamp=args.merge_timestamp,
             context_report_path=args.context_report,
+            promotion_journal_path=args.promotion_journal,
             summary_report_path=args.summary_report,
             translation_evidence_manifest=args.translation_evidence_manifest,
             allow_imported_translations=args.allow_imported_translations,

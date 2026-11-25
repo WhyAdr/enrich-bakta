@@ -41,11 +41,27 @@ from enrich_bakta_lib.sources.value_rules import (
     validate_tigrfam_accession,
 )
 
-SUPPORTED_INTERPROSCAN_VERSIONS = frozenset({"5.59-91.0"})
 DEFAULT_INTERPROSCAN_VERSION = "5.59-91.0"
 
 TSV_LAYOUT_PROFILES = ("ipr-go-pathways", "ipr-go", "ipr-pathways", "ipr-only")
 DEFAULT_TSV_LAYOUT = "ipr-go-pathways"
+
+
+@dataclass(frozen=True)
+class InterProScanProfile:
+    """Version-scoped native TSV compatibility established against a real corpus."""
+
+    version: str
+    supported_layouts: tuple[str, ...]
+
+
+INTERPROSCAN_PROFILES: dict[str, InterProScanProfile] = {
+    DEFAULT_INTERPROSCAN_VERSION: InterProScanProfile(
+        version=DEFAULT_INTERPROSCAN_VERSION,
+        supported_layouts=TSV_LAYOUT_PROFILES,
+    ),
+}
+SUPPORTED_INTERPROSCAN_VERSIONS = frozenset(INTERPROSCAN_PROFILES)
 
 SUPPORTED_MEMBER_DBS = frozenset({"Pfam", "TIGRFAM"})
 DEFAULT_MEMBER_DBS = ("Pfam", "TIGRFAM")
@@ -554,14 +570,16 @@ def plan_interproscan(
         raise MergeError(
             "InterProScan input requires an explicit interproscan_version assertion"
         )
-    if version not in SUPPORTED_INTERPROSCAN_VERSIONS:
+    profile = INTERPROSCAN_PROFILES.get(version)
+    if profile is None:
         raise MergeError(
-            f"unsupported InterProScan version {version!r}; verified version is 5.59-91.0"
+            f"unsupported InterProScan version {version!r}; "
+            f"verified version is {', '.join(sorted(INTERPROSCAN_PROFILES))}"
         )
-    if layout not in TSV_LAYOUT_PROFILES:
+    if layout not in profile.supported_layouts:
         raise MergeError(
             f"unsupported InterProScan TSV layout {layout!r}; "
-            f"supported layouts: {', '.join(TSV_LAYOUT_PROFILES)}"
+            f"supported layouts: {', '.join(profile.supported_layouts)}"
         )
     member_dbs = tuple(member_dbs)
 

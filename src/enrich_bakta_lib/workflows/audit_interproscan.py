@@ -22,8 +22,8 @@ from enrich_bakta_lib.core.artifacts import (
 )
 from enrich_bakta_lib.core.types import TOOL_VERSION, MergeError
 from enrich_bakta_lib.sources.interproscan import (
+    INTERPROSCAN_PROFILES,
     MAX_RAW_LINE_BYTES,
-    SUPPORTED_INTERPROSCAN_VERSIONS,
     TSV_LAYOUT_PROFILES,
     validate_tsv_row_layout,
 )
@@ -426,9 +426,10 @@ def audit_interproscan(
 ) -> dict[str, Any]:
     if json_path is None and gff3_path is None:
         raise MergeError("provide at least one of --json and --gff3")
-    if version not in SUPPORTED_INTERPROSCAN_VERSIONS:
+    profile = INTERPROSCAN_PROFILES.get(version)
+    if profile is None:
         raise MergeError(f"unsupported InterProScan producer version {version!r}")
-    if layout not in TSV_LAYOUT_PROFILES:
+    if layout not in profile.supported_layouts:
         raise MergeError(f"unsupported InterProScan TSV layout {layout!r}")
 
     expected, tsv_meta = _read_tsv(tsv_path, layout)

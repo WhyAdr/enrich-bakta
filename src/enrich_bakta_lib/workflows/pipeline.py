@@ -124,6 +124,7 @@ def execute_merge_pipeline(
     output_path: Path,
     manifest_path: Path | None = None,
     context_report_path: Path | None = None,
+    promotion_journal_path: Path | None = None,
     summary_report_path: Path | None = None,
     gene_conflict_policy: str = "skip",
     reconcile: bool = True,
@@ -222,6 +223,7 @@ def execute_merge_pipeline(
         evidence_rows=evidence_rows,
         metadata=metadata,
         sidecar_path=context_report_path,
+        promotion_journal_path=promotion_journal_path,
         sidecar_payload=sidecar_payload,
         summary_report_path=summary_report_path,
     )

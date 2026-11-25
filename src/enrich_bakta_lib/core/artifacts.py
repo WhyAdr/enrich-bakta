@@ -167,13 +167,24 @@ def preflight_artifact_paths(outputs: Iterable[Path], inputs: Iterable[Path]) ->
 
 
 def stage_artifacts(
-    artifacts: list[tuple[Path, bytes]], inputs: Iterable[Path]
+    artifacts: list[tuple[Path, bytes]],
+    inputs: Iterable[Path],
+    *,
+    promotion_journal_path: Path | None = None,
 ) -> None:
-    """Stage every artifact before the first replacement; promotions are sequential."""
+    """Stage every artifact before sequential replacement, optionally journaling progress.
+
+    The journal describes completed replacements and their content hashes. If a
+    process stops between replacement and the journal update, compare the actual
+    destination hash with the recorded expected and previous hashes.
+    """
     input_paths = list(inputs)
     paths = [path for path, _ in artifacts]
+    if promotion_journal_path is not None:
+        paths.append(promotion_journal_path)
     preflight_artifact_paths(paths, input_paths)
     staged: list[tuple[Path, Path]] = []
+    journal: list[dict[str, str | None]] = []
     try:
         for path, data in artifacts:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -187,16 +198,52 @@ def stage_artifacts(
                 handle.flush()
                 os.fsync(handle.fileno())
         preflight_artifact_paths(paths, input_paths)
-        for temporary, path in staged:
-            os.replace(temporary, path)
+        if promotion_journal_path is not None:
+            journal = [
+                {
+                    "destination": str(path.absolute()),
+                    "expected_sha256": sha256_bytes(data),
+                    "previous_sha256": sha256_file(path) if path.exists() else None,
+                    "status": "staged",
+                }
+                for path, data in artifacts
+            ]
+            _write_promotion_journal(promotion_journal_path, journal)
+        for index, (temporary, path) in enumerate(staged):
+            try:
+                os.replace(temporary, path)
+            except OSError as promotion_error:
+                if promotion_journal_path is not None:
+                    journal[index]["status"] = "failed"
+                    try:
+                        _write_promotion_journal(promotion_journal_path, journal)
+                    except OSError as journal_error:
+                        raise OSError(
+                            f"{promotion_error}; journal update failed: {journal_error}"
+                        ) from promotion_error
+                raise
+            if promotion_journal_path is not None:
+                journal[index]["status"] = "promoted"
+                _write_promotion_journal(promotion_journal_path, journal)
     except OSError as exc:
+        journal_detail = (
+            f"; promotion journal: {promotion_journal_path}"
+            if promotion_journal_path is not None
+            else ""
+        )
         raise MergeError(
             "artifact staging/promotion failed; promotions are not a cross-file transaction: "
-            f"{exc}"
+            f"{exc}{journal_detail}"
         ) from exc
     finally:
         for temporary, _ in staged:
             temporary.unlink(missing_ok=True)
+
+
+def _write_promotion_journal(path: Path, rows: list[dict[str, str | None]]) -> None:
+    write_json_sidecar(
+        path, {"schema": "enrich-bakta.promotion-journal.v1", "artifacts": rows}
+    )
 
 
 def finalize_merge(
@@ -213,6 +260,7 @@ def finalize_merge(
     extra_allowed_qualifiers: Iterable[str] = (),
     sidecar_path: Path | None = None,
     sidecar_payload: dict[str, Any] | None = None,
+    promotion_journal_path: Path | None = None,
     summary_report_path: Path | None = None,
 ) -> dict[str, Any]:
     if base_doc is not None and base_doc.data != base_data:
@@ -243,12 +291,7 @@ def finalize_merge(
         [*inputs, output_path, *([manifest_path] if manifest_path else [])],
     ):
         raise MergeError("sidecar path must differ from inputs, output, and manifest")
-    if summary_report_path is not None:
-        from enrich_bakta_lib.workflows.summary_report import (
-            resolve_report_format,
-            summary_report_bytes,
-        )
-
+    if summary_report_path is not None or promotion_journal_path is not None:
         preflight_artifact_paths(
             (
                 path
@@ -257,11 +300,18 @@ def finalize_merge(
                     manifest_path,
                     sidecar_path,
                     summary_report_path,
+                    promotion_journal_path,
                 )
                 if path is not None
             ),
             inputs,
         )
+    if summary_report_path is not None:
+        from enrich_bakta_lib.workflows.summary_report import (
+            resolve_report_format,
+            summary_report_bytes,
+        )
+
         report_format = resolve_report_format(summary_report_path)
     if sha256_file(base_path) != sha256_bytes(base_data):
         raise MergeError(
@@ -354,7 +404,7 @@ def finalize_merge(
         artifacts.append((sidecar_path, sidecar_bytes))
     if summary_report_path is not None and summary_data is not None:
         artifacts.append((summary_report_path, summary_data))
-    stage_artifacts(artifacts, inputs)
+    stage_artifacts(artifacts, inputs, promotion_journal_path=promotion_journal_path)
     return {
         "output_sha256": metadata["output_sha256"],
         "base_sha256": metadata["base_sha256"],
