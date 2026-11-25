@@ -1,6 +1,6 @@
 # enrich-bakta
 
-Version `0.4.1` is distributed under the GNU GPL v3 or later. Curated owner-
+Version `0.5.0` is distributed under the GNU GPL v3 or later. Curated owner-
 authorized biological artifacts are published separately under CC BY 4.0; see
 [`docs/data/PUBLISHING.md`](docs/data/PUBLISHING.md).
 
@@ -36,6 +36,9 @@ cross-file transaction.
 | `src/enrich_bakta_lib/sources/interproscan.py` | Streaming TSV parser, layout profile validation, member database note promotion, and InterPro evidence transfer. |
 | `src/enrich_bakta_lib/workflows/pipeline.py` | Shared single-snapshot context capture, sidecar envelope assembly, and merge orchestration pipeline. |
 | `src/enrich_bakta_lib/workflows/enrich.py` | Canonical one-pass multi-source workflow CLI. |
+| `src/enrich_bakta_lib/workflows/summary_report.py` | Deterministic Markdown and HTML summaries of finalized merge artifacts. |
+| `src/enrich_bakta_lib/workflows/audit_interproscan.py` | Streaming TSV, JSON, and GFF3 occurrence audit for verified InterProScan exports. |
+| `src/enrich_bakta_lib/workflows/diff.py` | Per-locus GenBank qualifier deltas and manifest decision inspection. |
 | `src/enrich_bakta_lib/workflows/restore_translations.py` | Policy-controlled translation restoration with a downstream evidence ledger. |
 | `legacy/normalize_baktfold.py` | Historical normalization utility retained outside the supported package and byte-preserving path. |
 | `Root *.py` names | Compatibility launchers for migrated modules; new code should import the canonical package. |
@@ -297,7 +300,7 @@ python enrich_bakta.py \
   --eggnog query.emapper.annotations --eggnog-version 3.0.0-beta6 \
   --interproscan query.interproscan.tsv --interproscan-version 5.59-91.0 \
   --output ENRICHED.gbff --manifest ENRICHED.manifest.json \
-  --context-report ENRICHED.context.json
+  --context-report ENRICHED.context.json --summary-report ENRICHED.summary.html
 ```
 
 At least one evidence source is required, and FAA is mandatory with KofamScan,
@@ -346,6 +349,47 @@ the current [INSDC db_xref controlled vocabulary](https://www.insdc.org/submitti
 Biopython parsing is not an INSDC submission-validator result. eggNOG evidence is
 genomic annotation only, not proof of expression, activity, pathway completeness,
 or phenotype.
+
+## Enrichment reports and audits
+
+`--summary-report` writes Markdown or self-contained HTML from the finalized
+merge. It can also run without a saved manifest. To regenerate a report from
+existing files, use the offline command below. When the manifest records a
+context SHA-256, the command checks it before reading the context.
+
+```bash
+enrich-bakta-report --manifest ENRICHED.manifest.json \
+  --context-report ENRICHED.context.json --output ENRICHED.summary.md
+```
+
+To compare occurrence counts in native InterProScan exports, provide TSV and
+at least one of JSON and GFF3. The audit checks versions and JSON protein
+checksums. By default it exits with status 1 for a failed audit and still
+writes the requested reports.
+
+```bash
+enrich-bakta-audit-interproscan --interproscan-version 5.59-91.0 \
+  --tsv query.interproscan.tsv --json query.interproscan.json \
+  --gff3 query.interproscan.gff3 --output interproscan-audit.json \
+  --markdown interproscan-audit.md
+```
+
+Compare two structurally equivalent GenBank files or inspect the decisions in
+a saved merge manifest. Repeat the filters to select multiple loci,
+qualifiers, sources, or statuses where the mode supports them.
+
+```bash
+enrich-bakta-diff --base BAKTA.gbff --enriched ENRICHED.gbff \
+  --format json --output gbff-diff.json
+enrich-bakta-diff --manifest ENRICHED.manifest.json \
+  --source InterProScan --qualifier db_xref --format tsv --output decisions.tsv
+```
+
+Add `--fail-on-diff` to exit with status 1 when matching changes are found.
+For unified merges, `--promotion-journal ENRICHED.promotion.json` records
+each artifact's expected hash, previous hash, and replacement status. If a
+run stops during replacement, compare the destination hashes to the journal
+before retrying.
 
 ## Validation
 

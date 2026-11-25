@@ -3,7 +3,7 @@
   "accepted_on": "2026-10-05",
   "tool": {
     "name": "enrich-bakta",
-    "version": "0.4.1"
+    "version": "0.5.0"
   },
   "policies": {
     "allow_imported_translations": true,
@@ -36,7 +36,7 @@
           "candidate_count": 37942,
           "emitted_candidate_count": 34079,
           "accepted_candidate_count": 37942,
-          "context_report_sha256": "f0ea27ddeae2989260059f968e8b1363abfff25c7bb364cc0c78f367db2666ce",
+          "context_report_sha256": "59cad1cb6b7f97adb5467745c8d085916941cebe1d49c07c210b28bd81da0843",
           "support_digest": "291ee029b4cf4da9083d47a4d095054f83da6c584deeb734cf2eda2ec48977e1",
           "match_evidence_digest": "22926c0bdeaf667ff224ff2e67bb850016a1c635968d9cf28bffd1e4618ea9ef",
           "pathway_digest": "d90f0ba87705f44ec3070d146ea03ec547a294d219d23c243f3d903da35a2d76"
@@ -81,7 +81,7 @@
           "candidate_count": 37412,
           "emitted_candidate_count": 33540,
           "accepted_candidate_count": 37412,
-          "context_report_sha256": "aa6f77542f288efbe6ae16b588a84322818fd9fdeef6a712e152a473772739ae",
+          "context_report_sha256": "17eb69dc2710adc9808ba7052b4734af0ff63664e43970f97252f30252abcb9c",
           "support_digest": "3b6b49049c7892c8385a25d5a99752b94ad8f8ac05179745dc7d40b1b3a09a12",
           "match_evidence_digest": "e55fa3e60254827e8981e4af0d03e173d5e8ab1578400eb820b9df471025bd05",
           "pathway_digest": "0f698f6dd4df7029275aabf099e670f25fc3b52a3ceac7d3ddb544cdced5359c",

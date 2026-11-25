@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 - 2026-11-25
+
+- Added inline Markdown and self-contained HTML merge summaries and the offline
+  `enrich-bakta-report` command with context hash validation.
+- Added `enrich-bakta-audit-interproscan` for streaming cross-format version,
+  checksum, and match-occurrence comparison, with a versioned JSON schema.
+- Added `enrich-bakta-diff` for locus-level GenBank qualifier deltas and
+  filtered merge manifest decisions.
+- Added an opt-in sequential promotion journal, a registry for verified
+  InterProScan producer layouts, and a guide for fixture-backed source adapters.
 
 - Closed residual `0.4.1` InterProScan audit gaps: populated `metadata.sources` in combined
   `enrich-bakta.context.v1` envelopes, fixed direct `plan_interproscan()` `faa_sha256` reporting,
@@ -14,7 +23,7 @@
   `RawDocument` instances in `finalize_merge()`.
 - Standardized all four evidence sources onto `MergeContext`, `SourcePlan`, and `SourceAdapter`
   in `sources/base.py` and unified standalone and multi-source orchestration onto
-  `workflows/pipeline.py`.
+  `workflows/pipeline.py` with a structured `PipelineResult`.
 - Organized root planning/audit handoff documents under `docs/plans/` and `docs/audits/` and
   added normalized LF line-ending rules in `.gitattributes`.
 

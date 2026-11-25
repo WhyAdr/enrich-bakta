@@ -11,7 +11,7 @@ from pathlib import Path
 from Bio.SeqFeature import CompoundLocation, SimpleLocation
 
 QUALIFIER_INDENT = b" " * 21
-TOOL_VERSION = "0.4.1"
+TOOL_VERSION = "0.5.0"
 
 
 class MergeError(ValueError):

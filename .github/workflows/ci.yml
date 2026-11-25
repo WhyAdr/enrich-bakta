@@ -98,22 +98,37 @@ jobs:
       - name: Install wheel outside checkout
         shell: python
         run: |
+          import os
           import pathlib
           import subprocess
           import sys
           import tempfile
+          import tomllib
 
-          wheel = next(pathlib.Path("dist").glob("*.whl"))
+          wheel = next(pathlib.Path("dist").glob("*.whl")).resolve()
+          with open("pyproject.toml", "rb") as handle:
+              project = tomllib.load(handle)["project"]
+          env = os.environ.copy()
+          env.pop("PYTHONPATH", None)
           target = pathlib.Path(tempfile.mkdtemp(prefix="enrich-bakta-wheel-"))
           venv = target / "venv"
           subprocess.check_call([sys.executable, "-m", "venv", str(venv)])
-          python = venv / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
-          subprocess.check_call([str(python), "-m", "pip", "install", str(wheel)])
-          subprocess.check_call([str(python), "-m", "pip", "check"])
+          windows = sys.platform == "win32"
+          bin_dir = venv / ("Scripts" if windows else "bin")
+          python = bin_dir / ("python.exe" if windows else "python")
+          subprocess.check_call([str(python), "-m", "pip", "install", str(wheel)], cwd=target, env=env)
+          subprocess.check_call([str(python), "-m", "pip", "check"], cwd=target, env=env)
           subprocess.check_call(
               [str(python), "-m", "enrich_bakta_lib", "--version"],
               cwd=target,
+              env=env,
           )
+          for name in project["scripts"]:
+              command = bin_dir / (f"{name}.exe" if windows else name)
+              for flag, expected in (("--help", "usage:"), ("--version", project["version"])):
+                  result = subprocess.check_output([str(command), flag], cwd=target, env=env, text=True)
+                  assert expected in result, (name, flag, result)
+              print(f"{name} --help and --version passed")
 
   dataset-bytes:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')

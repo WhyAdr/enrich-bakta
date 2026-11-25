@@ -2,7 +2,6 @@
 
 ## Active plans and future notes
 
-- [Post-refactor features implementation plan](post-refactor-features-plan.md) — Codex execution handoff covering `--summary-report` (HTML/Markdown), streaming `audit-interproscan` (TSV vs. JSON/GFF3 cross-audit), `enrich-bakta-diff` (manifest & pairwise GBFF diff), `PipelineResult` cleanup, producer-profile registry extensibility, and optional promotion-journal hardening.
 - [Deferred features and future development notes](deferred-features-notes.md) — higher-level future backlog and onboarding scope for new external evidence sources (`dbCAN`, `AMRFinderPlus`, `DefenseFinder`, `antiSMASH`, future InterProScan/eggNOG versions).
 
 ## Completed and historical plans
@@ -11,6 +10,7 @@ These architecture, source-integration, and release plans are retained for prove
 Their completed parts are reflected in the current package and release documentation;
 they are not an alternate execution path.
 
+- [Post-refactor features implementation plan](post-refactor-features-plan.md) — **completed** for `0.5.0` with enrichment summaries, InterProScan cross-format audit, locus diff, producer registry, and opt-in promotion journal.
 - [Architectural refactoring implementation plan](architecture-refactoring-plan.md) — **completed** in commits `a5eead4` through `5ebee37` (`core/merge_engine.py` split, `6 -> 2` GenBank parse reduction, `MergeContext`/`SourcePlan`/`SourceAdapter` standardization, and `workflows/pipeline.py` unification).
 - [Implementation plan (2026-09-30)](enrich-bakta-implementation-plan-2026-09-30.md)
 - [Refined handoff (2026-10-01)](enrich-bakta-refined-handoff-2026-10-01.md)

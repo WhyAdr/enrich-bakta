@@ -14,6 +14,7 @@ from typing import Any
 from jsonschema import Draft202012Validator
 
 from enrich_bakta_lib.core.merge_engine import (
+    TOOL_VERSION,
     MergeError,
     load_translation_evidence,
     parse_genbank_bytes,
@@ -43,7 +44,7 @@ EXPECTED_C14 = {
     "candidate_count": 37942,
     "emitted_candidate_count": 34079,
     "accepted_candidate_count": 37942,
-    "context_report_sha256": "f0ea27ddeae2989260059f968e8b1363abfff25c7bb364cc0c78f367db2666ce",
+    "context_report_sha256": "59cad1cb6b7f97adb5467745c8d085916941cebe1d49c07c210b28bd81da0843",
     "four_source_output_sha256": "fbf4bb5eae6a35b3405469c443ee36570f04254bf128f2b925c9020b7bbadb0e",
     "four_source_insertions": 74910,
 }
@@ -54,7 +55,7 @@ EXPECTED_SM = {
     "candidate_count": 37412,
     "emitted_candidate_count": 33540,
     "accepted_candidate_count": 37412,
-    "context_report_sha256": "aa6f77542f288efbe6ae16b588a84322818fd9fdeef6a712e152a473772739ae",
+    "context_report_sha256": "17eb69dc2710adc9808ba7052b4734af0ff63664e43970f97252f30252abcb9c",
     "four_source_output_sha256": "69388307bedc377ce9acdf6ccce838e9af9eca38dff51f13ed9b76263c8d1035",
     "four_source_insertions": 73889,
 }
@@ -124,6 +125,10 @@ def run_checks(
     if not effective_baseline.is_file():
         raise FileNotFoundError(f"Scientific baseline not found: {effective_baseline}")
     base_json = json.loads(effective_baseline.read_text(encoding="utf-8"))
+    if base_json.get("tool") != {"name": "enrich-bakta", "version": TOOL_VERSION}:
+        raise AssertionError(
+            f"scientific baseline tool identity does not match enrich-bakta {TOOL_VERSION}"
+        )
     c14_exp = base_json.get("samples", {}).get("C14", {}).get("expected", {})
     if "interproscan_only" in c14_exp:
         c14_expected.update(c14_exp["interproscan_only"])
