@@ -6,6 +6,9 @@ The earlier independent review is preserved as
 [`independent-audit-2026-08-25.md`](independent-audit-2026-08-25.md).
 The final October 4 reviewer handoff is preserved as
 [`enrich-bakta-residual-review-2026-10-04.md`](enrich-bakta-residual-review-2026-10-04.md).
+The October 5 InterProScan audit and Gemini remediation handoff is preserved as
+[`enrich-bakta-interproscan-gemini-handoff-2026-10-05.md`](enrich-bakta-interproscan-gemini-handoff-2026-10-05.md)
+(its findings `F1`–`F10` were addressed in `0.4.1` and the subsequent audit-hardening fixes).
 
 Applicability note: that audit reviewed commit
 `5d6754d306e80cddcad7da5fc12b155ab44d2e85` before the local C14, SM, and BK71A

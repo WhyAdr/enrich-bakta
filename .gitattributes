@@ -1,3 +1,18 @@
+# Normalize text source, schema, config, and documentation files to LF.
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.txt text eol=lf
+docs/data/*.tsv text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# Preserve exact bytes in test fixtures (e.g. LF/CRLF parser tests).
+tests/fixtures/** -text
+
 # Curated biological corpus: keep large bytes out of the Git object database.
 data/C14/bakta/*.gbff filter=lfs diff=lfs merge=lfs -text
 data/C14/bakta/*.faa filter=lfs diff=lfs merge=lfs -text

@@ -76,6 +76,7 @@ __pycache__/
 .pytest_cache/
 
 .mypy_cache/
+.mypy-cache*/
 .ruff_cache/
 *.egg-info/
 build/

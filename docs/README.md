@@ -11,13 +11,16 @@ redistribution status.
 - [Curated dataset publication](data/PUBLISHING.md)
 - [Historical audit applicability](audits/README.md)
 - [Residual review and execution handoff](audits/enrich-bakta-residual-review-2026-10-04.md)
+- [InterProScan audit and Gemini remediation handoff](audits/enrich-bakta-interproscan-gemini-handoff-2026-10-05.md)
 - [Architecture history](architecture/README.md)
-- [Planning history](plans/README.md)
+- [Planning history and active roadmap](plans/README.md)
+- [Architectural refactoring plan](plans/architecture-refactoring-plan.md)
+- [Deferred features notes](plans/deferred-features-notes.md)
 - [Post-push follow-through hardening plan](plans/enrich-bakta-followthrough-hardening-2026-10-04.md)
-- [Implementation plan](../enrich-bakta-implementation-plan-2026-09-30.md)
-- [Refined handoff](../enrich-bakta-refined-handoff-2026-10-01.md)
+- [Implementation plan (2026-09-30)](plans/enrich-bakta-implementation-plan-2026-09-30.md)
+- [Refined handoff (2026-10-01)](plans/enrich-bakta-refined-handoff-2026-10-01.md)
+- [InterProScan Luna handoff (2026-10-04)](plans/enrich-bakta-interproscan-luna-handoff-2026-10-04.md)
 - [Main audit](audits/enrich-bakta-main-audit-2026-09-29.md)
 
-The root implementation plan and refined handoff remain at repository root
-because they are the active release records. Older architecture, audit, and
-source-integration documents are grouped under their subject folders.
+All architecture, audit, handoff, and planning documents are organized under
+their respective `docs/` folders to keep the repository root clean.
