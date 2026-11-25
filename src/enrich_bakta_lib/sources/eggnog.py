@@ -1180,8 +1180,7 @@ def merge(
         ),
         translation_evidence_loader=load_translation_evidence,
     )
-    candidate_counts: dict[str, Any] = {}
-    final, plans = execute_merge_pipeline(
+    result = execute_merge_pipeline(
         ctx,
         [
             EggnogAdapter(
@@ -1197,10 +1196,9 @@ def merge(
         context_report_path=context_report_path,
         reconcile=False,
         include_clean_gene_suffix_policy=True,
-        candidate_counts_out=candidate_counts,
     )
-    stats = {**plans[0].stats, **candidate_counts}
-    return {"eggnog": stats, **final}
+    stats = {**result.plans[0].stats, **result.candidate_counts}
+    return {"eggnog": stats, **result.final}
 
 
 def main() -> int:

@@ -448,8 +448,7 @@ def merge(
     ) -> dict[str, Any]:
         return {**baktfold_defaults, **meta}
 
-    candidate_counts: dict[str, Any] = {}
-    final, plans = execute_merge_pipeline(
+    result = execute_merge_pipeline(
         ctx,
         adapters,
         operation="baktfold-kofam-one-pass" if baktfold_path else "kofam-merge",
@@ -457,14 +456,13 @@ def merge(
         manifest_path=manifest_path,
         reconcile=True,
         metadata_override=_kofam_metadata,
-        candidate_counts_out=candidate_counts,
     )
     combined_stats: dict[str, Any] = {}
     if baktfold_path is not None:
-        combined_stats["baktfold"] = plans[0].stats
-    combined_stats["candidate_ledger"] = candidate_counts
-    combined_stats["kofam"] = plans[-1].stats
-    return {**combined_stats, **final}
+        combined_stats["baktfold"] = result.plans[0].stats
+    combined_stats["candidate_ledger"] = result.candidate_counts
+    combined_stats["kofam"] = result.plans[-1].stats
+    return {**combined_stats, **result.final}
 
 
 def main() -> int:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,15 @@ from enrich_bakta_lib.core.types import (
     sha256_bytes,
 )
 from enrich_bakta_lib.sources.base import MergeContext, SourceAdapter, SourcePlan
+
+
+@dataclass(frozen=True)
+class PipelineResult:
+    """Finalized artifacts, source plans, and candidate ledger counts."""
+
+    final: dict[str, Any]
+    plans: tuple[SourcePlan, ...]
+    candidate_counts: dict[str, Any]
 
 
 def capture_merge_context(
@@ -122,8 +132,7 @@ def execute_merge_pipeline(
         Callable[[dict[str, Any], list[SourcePlan], dict[str, Any]], dict[str, Any]]
         | None
     ) = None,
-    candidate_counts_out: dict[str, Any] | None = None,
-) -> tuple[dict[str, Any], list[SourcePlan]]:
+) -> PipelineResult:
     """Run adapters, reconcile, build/validate candidate ledger, and finalize merge."""
     plans: list[SourcePlan] = []
     insertions: list[Insertion] = []
@@ -191,8 +200,6 @@ def execute_merge_pipeline(
     evidence_rows.extend(candidate_rows)
     validate_candidate_ledger(candidate_rows, insertions, base=ctx.base_doc)
     metadata.update(candidate_counts)
-    if candidate_counts_out is not None:
-        candidate_counts_out.update(candidate_counts)
     if extra_metadata:
         metadata.update(extra_metadata)
     if metadata_override is not None:
@@ -216,4 +223,6 @@ def execute_merge_pipeline(
         sidecar_path=context_report_path,
         sidecar_payload=sidecar_payload,
     )
-    return final, plans
+    return PipelineResult(
+        final=final, plans=tuple(plans), candidate_counts=candidate_counts
+    )

@@ -1176,7 +1176,7 @@ def merge(
             "source_hashes": {plan.source_id: plan.source_sha256},
         }
 
-    final, _plans = execute_merge_pipeline(
+    result = execute_merge_pipeline(
         ctx,
         [
             InterProScanAdapter(
@@ -1193,7 +1193,7 @@ def merge(
         reconcile=True,
         metadata_override=_ips_metadata,
     )
-    return final
+    return result.final
 
 
 def build_parser() -> argparse.ArgumentParser:

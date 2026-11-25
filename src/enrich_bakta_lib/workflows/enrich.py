@@ -136,7 +136,7 @@ def enrich(
                 ),
             )
         )
-    final, _plans = execute_merge_pipeline(
+    result = execute_merge_pipeline(
         ctx,
         adapters,
         operation="unified-enrichment",
@@ -147,7 +147,7 @@ def enrich(
         reconcile=True,
         include_clean_gene_suffix_policy=True,
     )
-    return final
+    return result.final
 
 
 def main() -> int:

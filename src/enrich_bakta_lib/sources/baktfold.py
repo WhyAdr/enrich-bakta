@@ -652,8 +652,7 @@ def graft(
             "parity": stats["parity"],
         }
 
-    candidate_counts: dict[str, Any] = {}
-    final, plans = execute_merge_pipeline(
+    result = execute_merge_pipeline(
         ctx,
         [
             BaktfoldAdapter(
@@ -666,10 +665,9 @@ def graft(
         manifest_path=manifest_path,
         reconcile=False,
         metadata_override=_standalone_metadata,
-        candidate_counts_out=candidate_counts,
     )
-    stats = {**plans[0].stats, **candidate_counts}
-    return {**stats, **final}
+    stats = {**result.plans[0].stats, **result.candidate_counts}
+    return {**stats, **result.final}
 
 
 def _serializable_stats(stats: dict[str, Any]) -> dict[str, Any]:
