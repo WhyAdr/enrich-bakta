@@ -13,10 +13,6 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
-from enrich_bakta_lib.core.decisions import (
-    build_candidate_ledger,
-    validate_candidate_ledger,
-)
 from enrich_bakta_lib.core.merge_engine import (
     TOOL_VERSION,
     Insertion,
@@ -25,21 +21,15 @@ from enrich_bakta_lib.core.merge_engine import (
     RawFeature,
     TranslationEvidence,
     comment_insertion,
-    finalize_merge,
-    has_translation_evidence_marker,
-    load_translation_evidence,
-    parse_faa,
-    parse_genbank_bytes,
     qualifier_insertion,
     read_input_bytes,
-    reconcile_insertions,
     sha256_bytes,
 )
 from enrich_bakta_lib.core.merge_engine import (
     validate_faa_gbff as _validate_faa_gbff,
 )
-from enrich_bakta_lib.sources.baktfold import plan_baktfold_additions
-from enrich_bakta_lib.sources.base import MergeContext, SourcePlan
+from enrich_bakta_lib.sources.baktfold import BaktfoldAdapter
+from enrich_bakta_lib.sources.base import MergeContext, SourceAdapter, SourcePlan
 from enrich_bakta_lib.sources.value_rules import structured_note_tokens
 
 KO_RE = re.compile(r"K\d{5}\Z")
@@ -407,159 +397,73 @@ def merge(
     allow_imported_translations: bool = False,
     baktfold_invalid_ec_policy: str = "reject",
 ) -> dict[str, Any]:
-    base_data = read_input_bytes(bakta_path, "Bakta")
-    faa_data = read_input_bytes(faa_path, "FAA")
-    kofam_data = read_input_bytes(kofam_path, "Kofam")
-    base = parse_genbank_bytes(base_data, "Bakta input")
-    if (
-        has_translation_evidence_marker(base_data)
-        and translation_evidence_manifest is None
-    ):
-        raise MergeError(
-            "restored input requires --translation-evidence-manifest for Kofam validation"
-        )
-    translation_evidence = (
-        load_translation_evidence(translation_evidence_manifest, base)
-        if translation_evidence_manifest is not None
-        else None
+    from enrich_bakta_lib.workflows.pipeline import (
+        capture_merge_context,
+        execute_merge_pipeline,
     )
-    proteins = parse_faa(faa_data)
-    hits = parse_kofam_table(kofam_data)
 
-    insertions: list[Insertion] = []
-    evidence_rows: list[dict[str, Any]] = []
-    combined_stats: dict[str, Any] = {}
-    other_inputs = [faa_path, kofam_path]
-    if translation_evidence_manifest is not None:
-        other_inputs.append(translation_evidence_manifest)
-    if baktfold_path is not None:
-        baktfold_data = read_input_bytes(baktfold_path, "Baktfold")
-        baktfold = parse_genbank_bytes(baktfold_data, "Baktfold input")
-        (
-            baktfold_insertions,
-            baktfold_candidates,
-            baktfold_stats,
-        ) = plan_baktfold_additions(
-            base,
-            baktfold,
-            baktfold_data=baktfold_data,
-            add_feature_provenance=add_feature_provenance,
-            add_comment_note=add_comment_note,
-            merge_timestamp=merge_timestamp,
-            invalid_ec_policy=baktfold_invalid_ec_policy,
-            translation_evidence=translation_evidence,
-            allow_imported_translations=allow_imported_translations,
-        )
-        insertions.extend(baktfold_insertions)
-        evidence_rows.extend(baktfold_candidates)
-        combined_stats["baktfold"] = baktfold_stats
-        other_inputs.append(baktfold_path)
-
-    next_order = max((insertion.order for insertion in insertions), default=-1) + 1
-    kofam_insertions, kofam_evidence_rows, kofam_stats = plan_kofam_additions(
-        base,
-        proteins,
-        hits,
-        kofam_data=kofam_data,
-        faa_data=faa_data,
-        kofamscan_version=kofamscan_version,
+    ctx = capture_merge_context(
+        bakta_path=bakta_path,
+        faa_path=faa_path,
+        translation_evidence_manifest=translation_evidence_manifest,
+        allow_imported_translations=allow_imported_translations,
         add_comment_note=add_comment_note,
         add_feature_provenance=add_feature_provenance,
         merge_timestamp=merge_timestamp,
-        starting_order=next_order,
-        translation_evidence=translation_evidence,
-        allow_imported_translations=allow_imported_translations,
+        require_manifest_message=(
+            "restored input requires --translation-evidence-manifest for Kofam validation"
+        ),
     )
-    insertions.extend(kofam_insertions)
-    evidence_rows.extend(kofam_evidence_rows)
-    planned_insertions = list(insertions)
-    insertions, reconciliation_rows, reconciliation = reconcile_insertions(insertions)
-    evidence_rows.extend(
-        combined_stats.get("baktfold", {}).get("invalid_ec_values", [])
+    adapters: list[SourceAdapter] = []
+    if baktfold_path is not None:
+        adapters.append(
+            BaktfoldAdapter(
+                baktfold_path=baktfold_path,
+                invalid_ec_policy=baktfold_invalid_ec_policy,
+            )
+        )
+    adapters.append(
+        KofamAdapter(
+            kofam_path=kofam_path,
+            kofamscan_version=kofamscan_version,
+        )
     )
-    evidence_rows.extend(reconciliation_rows)
-    candidate_rows, candidate_counts = build_candidate_ledger(
-        base,
-        planned_insertions,
-        insertions,
-        evidence_rows,
-        source_hashes={
-            "Baktfold": combined_stats.get("baktfold", {}).get("baktfold_sha256", ""),
-            "KofamScan": kofam_stats["kofam_sha256"],
-        },
-    )
-    evidence_rows.extend(candidate_rows)
-    validate_candidate_ledger(candidate_rows, insertions, base=base)
-    combined_stats["candidate_ledger"] = candidate_counts
-    combined_stats["kofam"] = kofam_stats
-    final = finalize_merge(
-        base_path=bakta_path,
-        base_data=base_data,
-        base_doc=base,
+    baktfold_defaults: dict[str, Any] = {
+        "baktfold_sha256": "",
+        "baktfold_version": "",
+        "baktfold_version_detected": False,
+        "baktfold_translation_mismatch_policy": "",
+        "baktfold_translation_mismatch_loci": [],
+        "baktfold_translation_mismatch_suppressed_features": 0,
+        "baktfold_invalid_ec_policy": baktfold_invalid_ec_policy,
+        "baktfold_parity": {},
+        "baktfold_invalid_ec_values": [],
+        "baktfold_invalid_ec_value_count": 0,
+    }
+
+    def _kofam_metadata(
+        meta: dict[str, Any],
+        _plans: list[SourcePlan],
+        _candidate_counts: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {**baktfold_defaults, **meta}
+
+    candidate_counts: dict[str, Any] = {}
+    final, plans = execute_merge_pipeline(
+        ctx,
+        adapters,
+        operation="baktfold-kofam-one-pass" if baktfold_path else "kofam-merge",
         output_path=output_path,
-        other_inputs=other_inputs,
-        insertions=insertions,
         manifest_path=manifest_path,
-        evidence_rows=evidence_rows,
-        metadata={
-            "operation": "baktfold-kofam-one-pass" if baktfold_path else "kofam-merge",
-            "faa_sha256": kofam_stats["faa_sha256"],
-            "kofam_sha256": kofam_stats["kofam_sha256"],
-            "kofamscan_version": kofam_stats["kofamscan_version"],
-            "baktfold_sha256": (
-                combined_stats.get("baktfold", {}).get("baktfold_sha256", "")
-            ),
-            "baktfold_version": (
-                combined_stats.get("baktfold", {}).get("baktfold_version", "")
-            ),
-            "baktfold_version_detected": (
-                combined_stats.get("baktfold", {}).get(
-                    "baktfold_version_detected", False
-                )
-            ),
-            "baktfold_translation_mismatch_policy": (
-                combined_stats.get("baktfold", {}).get(
-                    "translation_mismatch_policy", ""
-                )
-            ),
-            "baktfold_translation_mismatch_loci": (
-                combined_stats.get("baktfold", {}).get("translation_mismatch_loci", [])
-            ),
-            "baktfold_translation_mismatch_suppressed_features": (
-                combined_stats.get("baktfold", {}).get(
-                    "translation_mismatch_suppressed_features", 0
-                )
-            ),
-            "baktfold_invalid_ec_policy": baktfold_invalid_ec_policy,
-            "baktfold_parity": combined_stats.get("baktfold", {}).get("parity", {}),
-            "baktfold_invalid_ec_values": combined_stats.get("baktfold", {}).get(
-                "invalid_ec_values", []
-            ),
-            "baktfold_invalid_ec_value_count": combined_stats.get("baktfold", {}).get(
-                "invalid_ec_value_count", 0
-            ),
-            **reconciliation,
-            "merge_timestamp": merge_timestamp or "",
-            "translation_evidence_manifest": (
-                str(translation_evidence_manifest)
-                if translation_evidence_manifest
-                else ""
-            ),
-            "allow_imported_translations": allow_imported_translations,
-            "translation_evidence": {
-                query: evidence.as_dict()
-                for query, evidence in (translation_evidence or {}).items()
-            },
-            "translation_evidence_parent_sha256": getattr(
-                translation_evidence, "manifest_sha256", ""
-            ),
-            "policies": {
-                "add_comment_note": add_comment_note,
-                "add_feature_provenance": add_feature_provenance,
-            },
-            **candidate_counts,
-        },
+        reconcile=True,
+        metadata_override=_kofam_metadata,
+        candidate_counts_out=candidate_counts,
     )
+    combined_stats: dict[str, Any] = {}
+    if baktfold_path is not None:
+        combined_stats["baktfold"] = plans[0].stats
+    combined_stats["candidate_ledger"] = candidate_counts
+    combined_stats["kofam"] = plans[-1].stats
     return {**combined_stats, **final}
 
 

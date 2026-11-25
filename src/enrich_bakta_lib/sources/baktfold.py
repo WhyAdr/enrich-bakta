@@ -19,10 +19,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from enrich_bakta_lib.core.decisions import (
-    build_candidate_ledger,
-    validate_candidate_ledger,
-)
 from enrich_bakta_lib.core.merge_engine import (
     TOOL_VERSION,
     Insertion,
@@ -32,10 +28,8 @@ from enrich_bakta_lib.core.merge_engine import (
     cds_by_locus,
     comment_insertion,
     feature_uid,
-    finalize_merge,
     has_translation_evidence_marker,
     index_unique_features,
-    load_translation_evidence,
     normalize_protein,
     parse_genbank_bytes,
     qualifier_insertion,
@@ -600,48 +594,30 @@ def graft(
     translation_evidence_manifest: Path | None = None,
     allow_imported_translations: bool = False,
 ) -> dict[str, Any]:
-    bakta_data = read_input_bytes(bakta_path, "Bakta")
-    baktfold_data = read_input_bytes(baktfold_path, "Baktfold")
-    base = parse_genbank_bytes(bakta_data, "Bakta input")
-    translation_evidence = (
-        load_translation_evidence(translation_evidence_manifest, base)
-        if translation_evidence_manifest
-        else None
+    from enrich_bakta_lib.workflows.pipeline import (
+        capture_merge_context,
+        execute_merge_pipeline,
     )
-    source = parse_genbank_bytes(baktfold_data, "Baktfold input")
-    insertions, candidate_rows, stats = plan_baktfold_additions(
-        base,
-        source,
-        baktfold_data=baktfold_data,
-        add_feature_provenance=add_feature_provenance,
-        add_comment_note=add_comment_note,
-        merge_timestamp=merge_timestamp,
-        invalid_ec_policy=invalid_ec_policy,
-        translation_evidence=translation_evidence,
+
+    ctx = capture_merge_context(
+        bakta_path=bakta_path,
+        translation_evidence_manifest=translation_evidence_manifest,
         allow_imported_translations=allow_imported_translations,
+        add_comment_note=add_comment_note,
+        add_feature_provenance=add_feature_provenance,
+        merge_timestamp=merge_timestamp,
+        require_manifest_message=(
+            "restored input requires --translation-evidence-manifest for Baktfold planning"
+        ),
     )
-    candidate_rows, candidate_counts = build_candidate_ledger(
-        base,
-        insertions,
-        insertions,
-        [*stats["invalid_ec_values"], *candidate_rows],
-        source_hashes={"Baktfold": stats["baktfold_sha256"]},
-    )
-    stats.update(candidate_counts)
-    validate_candidate_ledger(candidate_rows, insertions, base=base)
-    final = finalize_merge(
-        base_path=bakta_path,
-        base_data=bakta_data,
-        base_doc=base,
-        output_path=output_path,
-        other_inputs=[
-            baktfold_path,
-            *([translation_evidence_manifest] if translation_evidence_manifest else []),
-        ],
-        insertions=insertions,
-        manifest_path=manifest_path,
-        evidence_rows=candidate_rows,
-        metadata={
+
+    def _standalone_metadata(
+        _meta: dict[str, Any],
+        plans: list[SourcePlan],
+        candidate_counts: dict[str, Any],
+    ) -> dict[str, Any]:
+        stats = plans[0].stats
+        return {
             "operation": "baktfold-graft",
             "baktfold_sha256": stats["baktfold_sha256"],
             "baktfold_version": stats["baktfold_version"],
@@ -663,10 +639,10 @@ def graft(
             **candidate_counts,
             "translation_evidence": {
                 query: evidence.as_dict()
-                for query, evidence in (translation_evidence or {}).items()
+                for query, evidence in (ctx.translation_evidence or {}).items()
             },
             "translation_evidence_parent_sha256": getattr(
-                translation_evidence, "manifest_sha256", ""
+                ctx.translation_evidence, "manifest_sha256", ""
             ),
             "allow_imported_translations": allow_imported_translations,
             "policies": {
@@ -674,8 +650,25 @@ def graft(
                 "add_feature_provenance": add_feature_provenance,
             },
             "parity": stats["parity"],
-        },
+        }
+
+    candidate_counts: dict[str, Any] = {}
+    final, plans = execute_merge_pipeline(
+        ctx,
+        [
+            BaktfoldAdapter(
+                baktfold_path=baktfold_path,
+                invalid_ec_policy=invalid_ec_policy,
+            )
+        ],
+        operation="baktfold-graft",
+        output_path=output_path,
+        manifest_path=manifest_path,
+        reconcile=False,
+        metadata_override=_standalone_metadata,
+        candidate_counts_out=candidate_counts,
     )
+    stats = {**plans[0].stats, **candidate_counts}
     return {**stats, **final}
 
 

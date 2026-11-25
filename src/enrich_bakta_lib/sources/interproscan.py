@@ -14,9 +14,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from enrich_bakta_lib.core.decisions import (
-    build_candidate_ledger,
-)
 from enrich_bakta_lib.core.merge_engine import (
     TOOL_VERSION,
     Insertion,
@@ -26,16 +23,12 @@ from enrich_bakta_lib.core.merge_engine import (
     cds_by_locus,
     comment_insertion,
     feature_uid,
-    finalize_merge,
     has_translation_evidence_marker,
-    load_translation_evidence,
     normalize_protein,
     parse_faa,
-    parse_genbank_bytes,
     protein_sha256,
     qualifier_insertion,
     read_input_bytes,
-    reconcile_insertions,
     record_has_legacy_restoration_comment,
     sha256_bytes,
 )
@@ -1149,98 +1142,58 @@ def merge(
     allow_imported_translations: bool = False,
 ) -> dict[str, Any]:
     """Execute standalone InterProScan merge pipeline."""
+    from enrich_bakta_lib.workflows.pipeline import (
+        capture_merge_context,
+        execute_merge_pipeline,
+    )
+
     if not interproscan_version:
         raise MergeError(
             "InterProScan input requires an explicit interproscan_version assertion"
         )
-    base_data = read_input_bytes(bakta_path, "Bakta")
-    base = parse_genbank_bytes(base_data, "Bakta input")
-
-    member_dbs = parse_member_dbs(interproscan_member_dbs)
-
-    translation_evidence = (
-        load_translation_evidence(translation_evidence_manifest, base)
-        if translation_evidence_manifest
-        else None
-    )
-
-    faa_bytes = read_input_bytes(faa_path, "FAA")
-    faa_hash = sha256_bytes(faa_bytes)
-    proteins = parse_faa(faa_bytes)
-
-    plan = plan_interproscan(
-        base,
-        faa_path,
-        interproscan_path,
-        version=interproscan_version,
-        layout=interproscan_tsv_layout,
-        member_dbs=member_dbs,
+    ctx = capture_merge_context(
+        bakta_path=bakta_path,
+        faa_path=faa_path,
+        translation_evidence_manifest=translation_evidence_manifest,
+        allow_imported_translations=allow_imported_translations,
         add_comment_note=add_comment_note,
         add_feature_provenance=add_feature_provenance,
         merge_timestamp=merge_timestamp,
-        translation_evidence=translation_evidence,
-        allow_imported_translations=allow_imported_translations,
-        faa_data=faa_bytes,
-        faa_hash=faa_hash,
-        proteins=proteins,
+        require_manifest_message=(
+            "restored input requires --translation-evidence-manifest and preserved translation evidence"
+        ),
     )
 
-    reconciled, _rows, _stats = reconcile_insertions(plan.insertions)
-    source_hashes = {"InterProScan": plan.source_sha256}
+    def _ips_metadata(
+        meta: dict[str, Any],
+        plans: list[SourcePlan],
+        _candidate_counts: dict[str, Any],
+    ) -> dict[str, Any]:
+        plan = plans[0]
+        return {
+            **meta,
+            "member_dbs": list(plan.manifest_metadata["interproscan_member_dbs"]),
+            "source_hashes": {plan.source_id: plan.source_sha256},
+        }
 
-    candidate_rows, ledger_counts = build_candidate_ledger(
-        base,
-        plan.insertions,
-        reconciled,
-        plan.evidence_rows,
-        source_hashes=source_hashes,
-    )
-
-    metadata: dict[str, Any] = {
-        "operation": "interproscan-merge",
-        "merge_timestamp": merge_timestamp or "",
-        "faa_sha256": plan.stats.get("faa_sha256", faa_hash),
-        "interproscan_sha256": plan.source_sha256,
-        "interproscan_version": plan.version,
-        "interproscan_tsv_layout": plan.layout,
-        "member_dbs": list(plan.member_dbs),
-        "interproscan_member_dbs": list(plan.member_dbs),
-        "translation_evidence_manifest": (
-            str(translation_evidence_manifest) if translation_evidence_manifest else ""
-        ),
-        "allow_imported_translations": allow_imported_translations,
-        "translation_evidence": {
-            query: evidence.as_dict()
-            for query, evidence in (translation_evidence or {}).items()
-        },
-        "translation_evidence_parent_sha256": getattr(
-            translation_evidence, "manifest_sha256", ""
-        ),
-        "policies": {
-            "add_comment_note": add_comment_note,
-            "add_feature_provenance": add_feature_provenance,
-        },
-        "source_hashes": source_hashes,
-        **ledger_counts,
-    }
-
-    other_inputs = [faa_path, interproscan_path]
-    if translation_evidence_manifest:
-        other_inputs.append(translation_evidence_manifest)
-
-    return finalize_merge(
-        base_path=bakta_path,
-        base_data=base_data,
-        base_doc=base,
+    final, _plans = execute_merge_pipeline(
+        ctx,
+        [
+            InterProScanAdapter(
+                interproscan_path=interproscan_path,
+                version=interproscan_version,
+                layout=interproscan_tsv_layout,
+                member_dbs=interproscan_member_dbs,
+            )
+        ],
+        operation="interproscan-merge",
         output_path=output_path,
-        other_inputs=other_inputs,
-        insertions=reconciled,
         manifest_path=manifest_path,
-        metadata=metadata,
-        evidence_rows=[*candidate_rows, *plan.evidence_rows],
-        sidecar_path=context_report_path,
-        sidecar_payload=plan.context_report if context_report_path else None,
+        context_report_path=context_report_path,
+        reconcile=True,
+        metadata_override=_ips_metadata,
     )
+    return final
 
 
 def build_parser() -> argparse.ArgumentParser:

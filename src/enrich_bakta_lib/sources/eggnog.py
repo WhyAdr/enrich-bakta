@@ -14,10 +14,6 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
-from enrich_bakta_lib.core.decisions import (
-    build_candidate_ledger,
-    validate_candidate_ledger,
-)
 from enrich_bakta_lib.core.merge_engine import (
     TOOL_VERSION,
     Insertion,
@@ -27,11 +23,7 @@ from enrich_bakta_lib.core.merge_engine import (
     TranslationEvidence,
     comment_insertion,
     feature_uid,
-    finalize_merge,
-    has_translation_evidence_marker,
     load_translation_evidence,
-    parse_faa,
-    parse_genbank_bytes,
     qualifier_insertion,
     read_input_bytes,
     sha256_bytes,
@@ -1169,106 +1161,45 @@ def merge(
     translation_evidence_manifest: Path | None = None,
     allow_imported_translations: bool = False,
 ) -> dict[str, Any]:
-    base_data, faa_data, eggnog_data = (
-        read_input_bytes(bakta_path, "Bakta"),
-        read_input_bytes(faa_path, "FAA"),
-        read_input_bytes(eggnog_path, "eggNOG"),
+    from enrich_bakta_lib.workflows.pipeline import (
+        capture_merge_context,
+        execute_merge_pipeline,
     )
-    base = parse_genbank_bytes(base_data, "Bakta input")
-    if (
-        has_translation_evidence_marker(base_data)
-        and translation_evidence_manifest is None
-    ):
-        raise MergeError(
-            "restored input requires --translation-evidence-manifest for eggNOG validation"
-        )
-    translation_evidence = (
-        load_translation_evidence(translation_evidence_manifest, base)
-        if translation_evidence_manifest is not None
-        else None
-    )
-    table = parse_eggnog_path(
-        eggnog_path,
-        expected_version=eggnog_version,
-        data=eggnog_data,
-        schema_id=eggnog_schema,
-    )
-    plan = plan_eggnog_additions(
-        base,
-        parse_faa(faa_data),
-        table,
-        eggnog_data=eggnog_data,
-        faa_data=faa_data,
-        min_confidence=min_confidence,
-        clean_gene_suffix=clean_gene_suffix,
+
+    ctx = capture_merge_context(
+        bakta_path=bakta_path,
+        faa_path=faa_path,
+        translation_evidence_manifest=translation_evidence_manifest,
+        allow_imported_translations=allow_imported_translations,
         add_comment_note=add_comment_note,
         add_feature_provenance=add_feature_provenance,
         merge_timestamp=merge_timestamp,
-        translation_evidence=translation_evidence,
-        allow_imported_translations=allow_imported_translations,
+        clean_gene_suffix=clean_gene_suffix,
+        require_manifest_message=(
+            "restored input requires --translation-evidence-manifest for eggNOG validation"
+        ),
+        translation_evidence_loader=load_translation_evidence,
     )
-    insertions = plan.insertions
-    evidence = plan.evidence_rows
-    stats = plan.stats
-    context_report = plan.context_report
-    context_report["metadata"]["operation"] = "eggnog-merge"
-    candidate_rows, candidate_counts = build_candidate_ledger(
-        base,
-        insertions,
-        insertions,
-        evidence,
-        source_hashes={"eggNOG": stats["eggnog_sha256"]},
-    )
-    evidence.extend(candidate_rows)
-    validate_candidate_ledger(candidate_rows, insertions, base=base)
-    stats.update(candidate_counts)
-    final = finalize_merge(
-        base_path=bakta_path,
-        base_data=base_data,
-        base_doc=base,
-        output_path=output_path,
-        other_inputs=[
-            faa_path,
-            eggnog_path,
-            *([translation_evidence_manifest] if translation_evidence_manifest else []),
+    candidate_counts: dict[str, Any] = {}
+    final, plans = execute_merge_pipeline(
+        ctx,
+        [
+            EggnogAdapter(
+                eggnog_path=eggnog_path,
+                eggnog_version=eggnog_version,
+                eggnog_schema=eggnog_schema,
+                min_confidence=min_confidence,
+            )
         ],
-        insertions=insertions,
+        operation="eggnog-merge",
+        output_path=output_path,
         manifest_path=manifest_path,
-        evidence_rows=evidence,
-        sidecar_path=context_report_path,
-        sidecar_payload=context_report if context_report_path else None,
-        metadata={
-            "operation": "eggnog-merge",
-            "eggnog_sha256": stats["eggnog_sha256"],
-            "faa_sha256": stats["faa_sha256"],
-            "eggnog_version": stats["eggnog_version"],
-            "eggnog_schema": stats["eggnog_schema"],
-            "schema_selection_source": stats["schema_selection_source"],
-            "min_eggnog_confidence": min_confidence,
-            "confidence_field_order": stats["confidence_field_order"],
-            "confidence_contract_source": stats["confidence_contract_source"],
-            "merge_timestamp": merge_timestamp or "",
-            "translation_evidence_manifest": (
-                str(translation_evidence_manifest)
-                if translation_evidence_manifest
-                else ""
-            ),
-            "allow_imported_translations": allow_imported_translations,
-            "translation_evidence": {
-                query: evidence.as_dict()
-                for query, evidence in (translation_evidence or {}).items()
-            },
-            "translation_evidence_parent_sha256": getattr(
-                translation_evidence, "manifest_sha256", ""
-            ),
-            "policies": {
-                "add_comment_note": add_comment_note,
-                "add_feature_provenance": add_feature_provenance,
-                "clean_gene_suffix": clean_gene_suffix,
-            },
-            **candidate_counts,
-        },
+        context_report_path=context_report_path,
+        reconcile=False,
+        include_clean_gene_suffix_policy=True,
+        candidate_counts_out=candidate_counts,
     )
+    stats = {**plans[0].stats, **candidate_counts}
     return {"eggnog": stats, **final}
 
 

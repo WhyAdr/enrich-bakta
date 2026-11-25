@@ -49,7 +49,8 @@ class SourcePlan:
 class SourceAdapter(Protocol):
     """Protocol implemented by every evidence source adapter."""
 
-    source_id: str
+    @property
+    def source_id(self) -> str: ...
 
     def plan(self, ctx: MergeContext, *, starting_order: int = 0) -> SourcePlan:
         """Validate source inputs against ctx and return a deterministic SourcePlan."""
