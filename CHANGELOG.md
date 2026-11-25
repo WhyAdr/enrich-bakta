@@ -4,6 +4,8 @@
 
 - Added `enrich-bakta-export` for one deterministic TSV row per CDS, with
   optional byte-bound manifest and context evidence.
+- Added `enrich-bakta-preflight` for read-only GenBank cross-reference syntax
+  and INSDC database-prefix checks against a dated offline vocabulary.
 
 ## 0.5.0 - 2026-11-25
 

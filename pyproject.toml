@@ -38,6 +38,7 @@ enrich-bakta-report = "enrich_bakta_lib.workflows.summary_report:main"
 enrich-bakta-audit-interproscan = "enrich_bakta_lib.workflows.audit_interproscan:main"
 enrich-bakta-diff = "enrich_bakta_lib.workflows.diff:main"
 enrich-bakta-export = "enrich_bakta_lib.workflows.cds_export:main"
+enrich-bakta-preflight = "enrich_bakta_lib.workflows.submission_preflight:main"
 
 [tool.setuptools]
 py-modules = [

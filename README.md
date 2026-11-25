@@ -417,6 +417,30 @@ InterProScan context provides AntiFam calls for uniquely mapped loci.
 for it. Sidecar coverage varies, and `unavailable` and `ambiguous_locus`
 identify rows without a conclusive context mapping.
 
+## INSDC cross-reference preflight
+
+```bash
+enrich-bakta-preflight --gbff ENRICHED.gbff --output ENRICHED.preflight.json
+enrich-bakta-preflight --gbff ENRICHED.gbff --format tsv --output ENRICHED.preflight.tsv
+```
+
+Preflight parses the GenBank file and checks every feature's `/db_xref` for
+`database:identifier` syntax and exact database spelling. The offline
+vocabulary snapshot is dated November 25, 2026.
+[INSDC cross-reference vocabulary](https://www.insdc.org/submitting-standards/dbxref-qualifier-vocabulary/) ·
+[NCBI database list](https://www.ncbi.nlm.nih.gov/genbank/collab/db_xref/).
+The report preserves each parsed value and its location, and suggests a
+canonical spelling for case-only findings. The command reads the GBFF and
+writes a separate report.
+
+JSON includes the input hash, vocabulary provenance, counts, and findings.
+TSV has one row per finding, with a header-only file for a clean result.
+Exit status is `0` for a clean report, `1` for findings after writing the
+report, and `2` for input or output errors. Use the target archive's own
+validator for the full submission.
+[NCBI table2asn](https://www.ncbi.nlm.nih.gov/genbank/table2asn/) ·
+[ENA Webin-CLI](https://ena-docs.readthedocs.io/en/latest/submit/assembly/genome.html).
+
 ## Validation
 
 ```bash
