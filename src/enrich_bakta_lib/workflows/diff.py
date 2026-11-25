@@ -6,6 +6,7 @@ import argparse
 import csv
 import io
 import json
+import sys
 from collections import Counter, defaultdict
 from collections.abc import Iterator, Sequence
 from pathlib import Path
@@ -37,7 +38,7 @@ def _comment_lines(document: RawDocument, record: RawRecord) -> list[str]:
         if field:
             in_comment = field == b"COMMENT"
         if in_comment and line[12:].strip():
-            comments.append(line[12:].strip().decode("utf-8"))
+            comments.append(line[12:].strip().decode(document.text_encoding))
     return comments
 
 
@@ -425,8 +426,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             stage_artifacts([(args.output, rendered)], inputs)
         else:
             print(rendered.decode("utf-8"), end="")
-    except MergeError as exc:
-        parser.error(str(exc))
+    except (MergeError, OSError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
     return int(bool(args.fail_on_diff and changed))
 
 

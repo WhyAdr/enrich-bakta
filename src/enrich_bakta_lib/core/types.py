@@ -82,6 +82,7 @@ class RawRecord:
 class RawDocument:
     data: bytes
     records: list[RawRecord]
+    text_encoding: str = "utf-8"
 
     @property
     def features(self) -> list[RawFeature]:

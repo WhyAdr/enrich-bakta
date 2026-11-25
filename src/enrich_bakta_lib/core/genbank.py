@@ -178,7 +178,7 @@ def parse_genbank_bytes(data: bytes, label: str = "GenBank input") -> RawDocumen
                 f"{label}: record {record.record_id!r} declares {record.declared_length} bp "
                 f"but ORIGIN contains {len(record.sequence)} bp"
             )
-    semantic_records = _semantic_records(data, label)
+    semantic_records, text_encoding = _semantic_records_with_encoding(data, label)
     if len(records) != len(semantic_records):
         raise MergeError(f"{label}: raw/semantic record counts differ")
     for raw_record, semantic_record in zip(records, semantic_records, strict=True):
@@ -195,17 +195,26 @@ def parse_genbank_bytes(data: bytes, label: str = "GenBank input") -> RawDocumen
             raw.qualifiers = {
                 key: list(values) for key, values in semantic.qualifiers.items()
             }
-    return RawDocument(data=data, records=records)
+    return RawDocument(data=data, records=records, text_encoding=text_encoding)
 
 
 def _semantic_records(data: bytes, label: str) -> list[SeqRecord]:
+    records, _ = _semantic_records_with_encoding(data, label)
+    return records
+
+
+def _semantic_records_with_encoding(
+    data: bytes, label: str
+) -> tuple[list[SeqRecord], str]:
     """Parse one authoritative semantic view, keeping raw bytes separately."""
+    text_encoding = "utf-8"
     try:
-        text = data.decode("utf-8")
+        text = data.decode(text_encoding)
     except UnicodeDecodeError:
         # The splice engine never rewrites source bytes. Latin-1 provides a
         # lossless one-codepoint-per-byte semantic view for legacy comments.
-        text = data.decode("latin-1")
+        text_encoding = "latin-1"
+        text = data.decode(text_encoding)
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", BiopythonParserWarning)
@@ -216,7 +225,7 @@ def _semantic_records(data: bytes, label: str) -> list[SeqRecord]:
         raise MergeError(f"{label}: Biopython GenBank parsing failed: {exc}") from exc
     if not records:
         raise MergeError(f"{label}: Biopython found no GenBank records")
-    return records
+    return records, text_encoding
 
 
 def validate_genbank_semantics(data: bytes, label: str = "GenBank input") -> int:

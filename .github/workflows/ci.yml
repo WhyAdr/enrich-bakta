@@ -160,6 +160,7 @@ jobs:
       - run: python tools/run_followthrough_real_checks.py
       - run: python tools/run_followthrough_chain_checks.py
       - run: python tools/run_interproscan_real_checks.py
+      - run: python tools/run_c14_cli_smoke_checks.py
       - if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -176,4 +177,14 @@ jobs:
           path: |
             .test-output/interproscan-gates/interproscan-real-checks.json
             .test-output/interproscan-gates/*.traceback.txt
+          if-no-files-found: ignore
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: c14-cli-smoke-results
+          path: |
+            .test-output/c14-cli-smoke/C14-audit.json
+            .test-output/c14-cli-smoke/C14-audit.md
+            .test-output/c14-cli-smoke/C14-summary.html
+            .test-output/c14-cli-smoke/C14-smoke.json
           if-no-files-found: ignore

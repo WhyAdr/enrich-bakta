@@ -74,6 +74,17 @@ def test_gbff_fail_on_diff_and_filter(
     assert main([*args, str(enriched), "--qualifier", "COMMENT"]) == 1
 
 
+def test_gbff_diff_uses_the_parsers_legacy_comment_encoding(tmp_path: Path) -> None:
+    base, enriched = _gbff_pair(tmp_path)
+    original = base.read_bytes().replace(b"FEATURES", b"            caf\xe9\nFEATURES")
+    base.write_bytes(original)
+    enriched.write_bytes(original.replace(b"caf\xe9", b"th\xe9"))
+    assert diff_gbff_files(base, base)["comment_deltas"] == []
+    (comment,) = diff_gbff_files(base, enriched)["comment_deltas"]
+    assert comment["added"] == ["thé"]
+    assert comment["removed"] == ["café"]
+
+
 @pytest.mark.parametrize(
     ("before", "after"),
     [
@@ -235,14 +246,22 @@ def test_manifest_resolves_suppressed_locus_without_feature_uid(tmp_path: Path) 
     assert result["groups"][0]["decisions"][0]["candidate_id"] == "c3"
 
 
-def test_cli_rejects_incompatible_modes_and_output_alias(tmp_path: Path) -> None:
+def test_cli_rejects_incompatible_modes_and_output_alias(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     path = _manifest(tmp_path)
     before = path.read_bytes()
     for options in (
         ["--base", str(path)],
         ["--enriched", str(path)],
-        ["--output", str(path)],
     ):
         with pytest.raises(SystemExit, match="2"):
             main(["--manifest", str(path), *options])
+    capsys.readouterr()
+    assert main(["--manifest", str(path), "--output", str(path)]) == 2
+    assert capsys.readouterr().err.startswith("ERROR:")
+    assert main(["--manifest", str(tmp_path / "missing.json")]) == 2
+    missing = capsys.readouterr()
+    assert missing.out == ""
+    assert missing.err.startswith("ERROR: cannot read merge manifest")
     assert path.read_bytes() == before
