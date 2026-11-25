@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WhyAdr/enrich-bakta/schemas/interproscan-audit.v1.schema.json",
+  "title": "enrich-bakta InterProScan cross-format audit v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "inputs", "version_check", "tsv_summary", "status"],
+  "anyOf": [{"required": ["json_audit"]}, {"required": ["gff3_audit"]}],
+  "properties": {
+    "schema": {"const": "enrich-bakta.interproscan-audit.v1"},
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tsv", "asserted_version", "tsv_layout"],
+      "properties": {
+        "tsv": {"$ref": "#/$defs/input"},
+        "json": {"$ref": "#/$defs/input"},
+        "gff3": {"$ref": "#/$defs/input"},
+        "asserted_version": {"type": "string", "minLength": 1},
+        "tsv_layout": {
+          "enum": ["ipr-go-pathways", "ipr-go", "ipr-pathways", "ipr-only"]
+        }
+      }
+    },
+    "version_check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asserted_version", "json_version", "gff3_version", "version_mismatch"],
+      "properties": {
+        "asserted_version": {"type": "string", "minLength": 1},
+        "json_version": {"type": ["string", "null"]},
+        "gff3_version": {"type": ["string", "null"]},
+        "version_mismatch": {"type": "boolean"}
+      }
+    },
+    "tsv_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rows", "unique_queries", "unique_match_keys", "occurrences_total"],
+      "properties": {
+        "rows": {"$ref": "#/$defs/count"},
+        "unique_queries": {"$ref": "#/$defs/count"},
+        "unique_match_keys": {"$ref": "#/$defs/count"},
+        "occurrences_total": {"$ref": "#/$defs/count"}
+      }
+    },
+    "json_audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protein_objects", "total_xrefs", "multi_xref_proteins", "md5_mismatches",
+        "unmatched_queries_count", "missing_tsv_occurrences",
+        "extra_occurrences_by_analysis", "library_versions"
+      ],
+      "properties": {
+        "protein_objects": {"$ref": "#/$defs/count"},
+        "total_xrefs": {"$ref": "#/$defs/count"},
+        "multi_xref_proteins": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["count", "samples"],
+          "properties": {
+            "count": {"$ref": "#/$defs/count"},
+            "samples": {
+              "type": "array",
+              "maxItems": 50,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["md5", "query_ids"],
+                "properties": {
+                  "md5": {"type": "string"},
+                  "query_ids": {
+                    "type": "array",
+                    "minItems": 2,
+                    "uniqueItems": true,
+                    "items": {"type": "string", "minLength": 1}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "md5_mismatches": {"$ref": "#/$defs/count"},
+        "unmatched_queries_count": {"$ref": "#/$defs/count"},
+        "missing_tsv_occurrences": {"$ref": "#/$defs/missing_occurrences"},
+        "extra_occurrences_by_analysis": {"$ref": "#/$defs/extra_occurrences"},
+        "library_versions": {"type": "object", "additionalProperties": {"type": "string"}}
+      }
+    },
+    "gff3_audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "polypeptide_count", "match_rows", "missing_tsv_occurrences",
+        "extra_occurrences_by_analysis"
+      ],
+      "properties": {
+        "polypeptide_count": {"$ref": "#/$defs/count"},
+        "match_rows": {"$ref": "#/$defs/count"},
+        "missing_tsv_occurrences": {"$ref": "#/$defs/missing_occurrences"},
+        "extra_occurrences_by_analysis": {"$ref": "#/$defs/extra_occurrences"}
+      }
+    },
+    "status": {"enum": ["passed", "failed"]}
+  },
+  "allOf": [
+    {
+      "if": {"required": ["json_audit"]},
+      "then": {"properties": {"inputs": {"required": ["json"]}}},
+      "else": {"properties": {"inputs": {"not": {"required": ["json"]}}}}
+    },
+    {
+      "if": {"required": ["gff3_audit"]},
+      "then": {"properties": {"inputs": {"required": ["gff3"]}}},
+      "else": {"properties": {"inputs": {"not": {"required": ["gff3"]}}}}
+    }
+  ],
+  "$defs": {
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "size_bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "size_bytes": {"$ref": "#/$defs/count"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "count": {"type": "integer", "minimum": 0},
+    "extra_occurrences": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z0-9]+$"},
+      "additionalProperties": {"type": "integer", "minimum": 1}
+    },
+    "missing_occurrences": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "samples"],
+      "properties": {
+        "count": {"$ref": "#/$defs/count"},
+        "samples": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["query_id", "analysis", "signature_accession", "start", "end", "occurrences"],
+            "properties": {
+              "query_id": {"type": "string", "minLength": 1},
+              "analysis": {"type": "string", "pattern": "^[a-z0-9]+$"},
+              "signature_accession": {"type": "string", "minLength": 1},
+              "start": {"type": "integer", "minimum": 1},
+              "end": {"type": "integer", "minimum": 1},
+              "occurrences": {"type": "integer", "minimum": 1}
+            }
+          }
+        }
+      }
+    }
+  }
+}
