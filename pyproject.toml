@@ -36,6 +36,7 @@ enrich-bakta-interproscan = "enrich_bakta_lib.sources.interproscan:main"
 enrich-bakta-restore-translations = "enrich_bakta_lib.workflows.restore_translations:main"
 enrich-bakta-report = "enrich_bakta_lib.workflows.summary_report:main"
 enrich-bakta-audit-interproscan = "enrich_bakta_lib.workflows.audit_interproscan:main"
+enrich-bakta-diff = "enrich_bakta_lib.workflows.diff:main"
 
 [tool.setuptools]
 py-modules = [
